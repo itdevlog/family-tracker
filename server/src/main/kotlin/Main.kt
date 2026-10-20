@@ -2,8 +2,10 @@ package familytracker
 
 import familytracker.db.Database
 import familytracker.db.PointIn
+import familytracker.live.LiveBroadcaster
 import familytracker.routes.RateLimiter
 import familytracker.routes.childPairRoute
+import familytracker.routes.liveRoutes
 import familytracker.routes.locationsRoutes
 import familytracker.routes.pairRoutes
 import io.ktor.http.ContentType
@@ -16,6 +18,7 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
 import java.util.UUID
 
 data class Config(val dbPath: String, val ntfyUrl: String, val ntfyToken: String) {
@@ -36,6 +39,7 @@ fun Application.module(
     install(ContentNegotiation) {
         json()
     }
+    install(WebSockets)
 
     // The Database constructor applies the schema, so the file is ready before routing starts.
     val database = Database(config.dbPath)
@@ -44,13 +48,20 @@ fun Application.module(
     // not leak between tests or restarts.
     val rateLimiter = RateLimiter()
 
+    // Bound to the application lifetime: pending pushes are cancelled on shutdown.
+    val broadcaster = LiveBroadcaster(this)
+
     routing {
         get("/health") {
             call.respondText("ok", ContentType.Text.Plain)
         }
         pairRoutes(database, config)
         childPairRoute(database, rateLimiter)
-        locationsRoutes(database, onLocationsInserted)
+        locationsRoutes(database) { familyId, deviceId, points ->
+            onLocationsInserted(familyId, deviceId, points)
+            points.forEach { broadcaster.broadcastLocation(familyId, deviceId, it) }
+        }
+        liveRoutes(database, broadcaster)
     }
 }
 
