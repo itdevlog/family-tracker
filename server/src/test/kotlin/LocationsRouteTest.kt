@@ -135,6 +135,30 @@ class LocationsRouteTest {
     }
 
     @Test
+    fun `recorded at outside the epoch millisecond range is unprocessable`() = testApplication {
+        application { module(config()) }
+        val child = client.childWithParent()
+
+        // Both strings are syntactically valid ISO-8601 and parse, but converting them to
+        // epoch milliseconds overflows a Long.
+        val farFuture = client.postLocations(
+            child.token,
+            """{"points":[{"lat":55.0,"lon":37.0,"accuracy":5.0,"speed":1.5,"recorded_at":"+999999999-12-31T23:59:59Z"}]}""",
+        )
+        assertEquals(HttpStatusCode.UnprocessableEntity, farFuture.status)
+        assertEquals("invalid point", farFuture.error())
+
+        val farPast = client.postLocations(
+            child.token,
+            """{"points":[{"lat":55.0,"lon":37.0,"accuracy":5.0,"speed":1.5,"recorded_at":"-999999999-01-01T00:00:00Z"}]}""",
+        )
+        assertEquals(HttpStatusCode.UnprocessableEntity, farPast.status)
+        assertEquals("invalid point", farPast.error())
+
+        assertTrue(storedPoints(child.deviceId).isEmpty())
+    }
+
+    @Test
     fun `missing or unknown token is unauthorized`() = testApplication {
         application { module(config()) }
         client.createParent()

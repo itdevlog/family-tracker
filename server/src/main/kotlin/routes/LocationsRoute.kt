@@ -16,8 +16,8 @@ import io.ktor.server.routing.post
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import java.time.DateTimeException
 import java.time.OffsetDateTime
-import java.time.format.DateTimeParseException
 import java.util.UUID
 
 /** Upper bound for one upload batch; keeps a single request cheap to validate and store. */
@@ -103,7 +103,11 @@ private fun LocationPointDto.toPointInOrNull(): PointIn? {
     if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
     val epochMillis = try {
         OffsetDateTime.parse(recordedAt).toInstant().toEpochMilli()
-    } catch (_: DateTimeParseException) {
+    } catch (_: DateTimeException) {
+        // DateTimeParseException (the usual malformed timestamp) is a DateTimeException.
+        return null
+    } catch (_: ArithmeticException) {
+        // A syntactically valid year outside the Long epoch-millisecond range overflows.
         return null
     }
     return PointIn(lat, lon, accuracy, speed, epochMillis)
