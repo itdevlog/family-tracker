@@ -25,6 +25,7 @@ import familytracker.db.sha256Hex
 import familytracker.db.storePairCode
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.sql.SQLException
 import java.util.UUID
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -189,6 +190,15 @@ class DaoTest {
         assertEquals(3, inserted)
         assertEquals(0, repeated)
         assertEquals(3, db.withConnection { locationHistory(it, child.deviceId, 0L, Long.MAX_VALUE).size })
+    }
+
+    @Test
+    fun `insertLocations surfaces foreign key violations instead of ignoring them`() {
+        assertFailsWith<SQLException> {
+            db.withConnection { conn ->
+                insertLocations(conn, UUID.randomUUID(), listOf(PointIn(1.0, 1.0, null, null, 1_000L)))
+            }
+        }
     }
 
     @Test

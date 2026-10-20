@@ -1,8 +1,10 @@
 package familytracker
 
 import familytracker.db.Database
+import familytracker.db.PointIn
 import familytracker.routes.RateLimiter
 import familytracker.routes.childPairRoute
+import familytracker.routes.locationsRoutes
 import familytracker.routes.pairRoutes
 import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.json
@@ -14,6 +16,7 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import java.util.UUID
 
 data class Config(val dbPath: String, val ntfyUrl: String, val ntfyToken: String) {
     companion object {
@@ -25,7 +28,11 @@ data class Config(val dbPath: String, val ntfyUrl: String, val ntfyToken: String
     }
 }
 
-fun Application.module(config: Config) {
+fun Application.module(
+    config: Config,
+    onLocationsInserted: (familyId: UUID, deviceId: UUID, points: List<PointIn>) -> Unit =
+        { _, _, _ -> },
+) {
     install(ContentNegotiation) {
         json()
     }
@@ -43,6 +50,7 @@ fun Application.module(config: Config) {
         }
         pairRoutes(database, config)
         childPairRoute(database, rateLimiter)
+        locationsRoutes(database, onLocationsInserted)
     }
 }
 

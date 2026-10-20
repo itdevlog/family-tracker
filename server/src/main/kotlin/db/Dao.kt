@@ -214,11 +214,30 @@ fun redeemChildCode(conn: Connection, code: String, name: String): RedeemResult 
     )
 }
 
-fun insertLocations(conn: Connection, deviceId: UUID, points: List<PointIn>): Int {
-    if (points.isEmpty()) return 0
+/**
+ * Inserts [points], silently skipping samples that duplicate an existing
+ * `(device_id, recorded_at)` row. Returns the number of rows actually inserted.
+ */
+fun insertLocations(conn: Connection, deviceId: UUID, points: List<PointIn>): Int =
+    insertLocationsReturningInserted(conn, deviceId, points).size
+
+/**
+ * Like [insertLocations], but returns exactly the points that were inserted, so callers can
+ * broadcast only new samples (a replayed batch must not produce duplicate events).
+ *
+ * Uses `ON CONFLICT (device_id, recorded_at) DO NOTHING` instead of `INSERT OR IGNORE`:
+ * only duplicate keys are skipped, while foreign key and CHECK violations still fail.
+ */
+fun insertLocationsReturningInserted(
+    conn: Connection,
+    deviceId: UUID,
+    points: List<PointIn>,
+): List<PointIn> {
+    if (points.isEmpty()) return emptyList()
     return conn.prepareStatement(
-        "INSERT OR IGNORE INTO locations(device_id, lat, lon, accuracy, speed, recorded_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO locations(device_id, lat, lon, accuracy, speed, recorded_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?) " +
+            "ON CONFLICT(device_id, recorded_at) DO NOTHING",
     ).use { statement ->
         points.forEach { point ->
             statement.setString(1, deviceId.toString())
@@ -237,7 +256,8 @@ fun insertLocations(conn: Connection, deviceId: UUID, points: List<PointIn>): In
             statement.setLong(6, point.recordedAt)
             statement.addBatch()
         }
-        statement.executeBatch().sum()
+        val updateCounts = statement.executeBatch()
+        points.filterIndexed { index, _ -> (updateCounts.getOrNull(index) ?: 0) > 0 }
     }
 }
 

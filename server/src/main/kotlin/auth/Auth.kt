@@ -57,6 +57,19 @@ suspend fun ApplicationCall.requireParent(database: Database): AuthDevice? {
     return device
 }
 
+/**
+ * Like [requireAuth], but additionally requires the child role.
+ * Responds 403 and returns null for any other role.
+ */
+suspend fun ApplicationCall.requireChild(database: Database): AuthDevice? {
+    val device = requireAuth(database) ?: return null
+    if (device.role != ROLE_CHILD) {
+        respond(HttpStatusCode.Forbidden, ErrorResponse("forbidden"))
+        return null
+    }
+    return device
+}
+
 private const val BEARER_PREFIX = "Bearer "
 
 private fun ApplicationCall.bearerToken(): String? {
