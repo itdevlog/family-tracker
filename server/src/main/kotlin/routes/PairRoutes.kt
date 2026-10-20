@@ -5,6 +5,7 @@ import familytracker.ErrorResponse
 import familytracker.auth.query
 import familytracker.auth.requireParent
 import familytracker.db.Database
+import familytracker.db.FamilyAlreadyExistsException
 import familytracker.db.createFamilyWithParent
 import familytracker.db.familyExists
 import familytracker.db.storePairCode
@@ -45,16 +46,19 @@ data class PairCodeResponse(
  */
 fun Route.pairRoutes(database: Database, config: Config) {
     post("/pair/parent") {
+        // Check the single-family slot before touching the body: a repeated registration
+        // must be 409 even when the client sends a missing or malformed body.
+        if (database.query { familyExists(it) }) {
+            call.respond(HttpStatusCode.Conflict, ErrorResponse("family exists"))
+            return@post
+        }
+
         val request = call.receive<ParentPairRequest>()
 
-        // A null result means the single-family slot is already taken. The Dao also guards
-        // this atomically and raises IllegalStateException when two requests race.
-        val registration = try {
-            database.query { conn ->
-                if (familyExists(conn)) null else createFamilyWithParent(conn, request.name)
-            }
-        } catch (_: IllegalStateException) {
-            null
+        // The Dao guards the single-family slot atomically; only its dedicated conflict
+        // exception is translated into a 409. Any other failure must surface unchanged.
+        val registration = ignoreFamilyAlreadyExists {
+            database.query { conn -> createFamilyWithParent(conn, request.name) }
         }
 
         if (registration == null) {
@@ -86,3 +90,14 @@ fun Route.pairRoutes(database: Database, config: Config) {
         )
     }
 }
+
+/**
+ * Runs [block], returning null only when the Dao reports the single-family conflict.
+ * Every other [IllegalStateException] (and any other throwable) propagates.
+ */
+internal suspend fun <T> ignoreFamilyAlreadyExists(block: suspend () -> T): T? =
+    try {
+        block()
+    } catch (_: FamilyAlreadyExistsException) {
+        null
+    }

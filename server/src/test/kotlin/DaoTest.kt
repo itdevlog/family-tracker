@@ -4,6 +4,7 @@ import familytracker.db.AuthDevice
 import familytracker.db.ChildRegistration
 import familytracker.db.Database
 import familytracker.db.DeviceSummary
+import familytracker.db.FamilyAlreadyExistsException
 import familytracker.db.PairCode
 import familytracker.db.PointIn
 import familytracker.db.RedeemResult
@@ -75,7 +76,7 @@ class DaoTest {
     fun `createFamilyWithParent rejects second family`() {
         db.withConnection { createFamilyWithParent(it, "Mom") }
 
-        assertFailsWith<IllegalStateException> {
+        assertFailsWith<FamilyAlreadyExistsException> {
             db.withConnection { createFamilyWithParent(it, "Other parent") }
         }
     }

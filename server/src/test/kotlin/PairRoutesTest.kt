@@ -2,9 +2,11 @@ package familytracker
 
 import familytracker.db.ChildRegistration
 import familytracker.db.Database
+import familytracker.db.FamilyAlreadyExistsException
 import familytracker.db.RedeemResult
 import familytracker.db.redeemChildCode
 import familytracker.db.storePairCode
+import familytracker.routes.ignoreFamilyAlreadyExists
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -16,6 +18,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -26,7 +29,9 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PairRoutesTest {
@@ -76,6 +81,42 @@ class PairRoutesTest {
 
         assertEquals(HttpStatusCode.Conflict, response.status)
         assertEquals("family exists", response.error())
+    }
+
+    @Test
+    fun `repeated parent registration is conflict even without a valid body`() = testApplication {
+        application { module(config()) }
+
+        client.createParent()
+
+        val noBody = client.post("/pair/parent")
+        assertEquals(HttpStatusCode.Conflict, noBody.status)
+        assertEquals("family exists", noBody.error())
+
+        val emptyBody = client.post("/pair/parent") {
+            contentType(ContentType.Application.Json)
+            setBody("")
+        }
+        assertEquals(HttpStatusCode.Conflict, emptyBody.status)
+        assertEquals("family exists", emptyBody.error())
+
+        val malformedBody = client.post("/pair/parent") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":""")
+        }
+        assertEquals(HttpStatusCode.Conflict, malformedBody.status)
+        assertEquals("family exists", malformedBody.error())
+    }
+
+    @Test
+    fun `only the dedicated family conflict exception is swallowed`() = runBlocking {
+        assertEquals("created", ignoreFamilyAlreadyExists { "created" })
+        assertNull(ignoreFamilyAlreadyExists<String> { throw FamilyAlreadyExistsException() })
+
+        val unexpected = assertFailsWith<IllegalStateException> {
+            ignoreFamilyAlreadyExists<String> { throw IllegalStateException("database is broken") }
+        }
+        assertEquals("database is broken", unexpected.message)
     }
 
     @Test

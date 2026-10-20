@@ -64,6 +64,12 @@ sealed interface RedeemResult {
     data object Expired : RedeemResult
 }
 
+/**
+ * Raised when a second family is registered on an installation that already has one.
+ * Subclasses [IllegalStateException] for backwards compatibility with earlier callers.
+ */
+class FamilyAlreadyExistsException : IllegalStateException("a family already exists")
+
 private val secureRandom = SecureRandom()
 
 private const val PAIR_CODE_TTL_MS = 5 * 60 * 1_000L
@@ -99,7 +105,7 @@ fun createFamilyWithParent(conn: Connection, name: String): ParentRegistration =
         statement.setLong(2, now)
         statement.executeUpdate()
     }
-    check(inserted == 1) { "a family already exists" }
+    if (inserted != 1) throw FamilyAlreadyExistsException()
 
     conn.prepareStatement(
         "INSERT INTO devices(id, family_id, role, name, token_hash, created_at) " +
