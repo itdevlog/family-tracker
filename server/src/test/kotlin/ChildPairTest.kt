@@ -115,6 +115,27 @@ class ChildPairTest {
     }
 
     @Test
+    fun `spoofed leftmost X-Forwarded-For hop does not reset the budget`() = testApplication {
+        application { module(config()) }
+
+        val parent = client.createParent()
+        val validCode = client.pairCode(parent.string("token"))
+        val unknownCode = missingCode()
+
+        // Caddy appends the real peer as the rightmost hop; the left part is client input.
+        repeat(5) { index ->
+            val spoofed = "203.0.113.$index, 10.0.0.1"
+            val response = client.pairChild(unknownCode, forwardedFor = spoofed)
+            assertEquals(HttpStatusCode.NotFound, response.status)
+        }
+
+        val blocked = client.pairChild(validCode, forwardedFor = "198.51.100.99, 10.0.0.1")
+
+        assertEquals(HttpStatusCode.TooManyRequests, blocked.status)
+        assertEquals("too many attempts", blocked.error())
+    }
+
+    @Test
     fun `successful pairing does not consume the failure budget`() = testApplication {
         application { module(config()) }
 
@@ -179,8 +200,13 @@ class ChildPairTest {
         return json.parseToJsonElement(response.bodyAsText()).jsonObject.string("code")
     }
 
-    private suspend fun HttpClient.pairChild(code: String, name: String = "Kid"): HttpResponse =
+    private suspend fun HttpClient.pairChild(
+        code: String,
+        name: String = "Kid",
+        forwardedFor: String? = null,
+    ): HttpResponse =
         post("/pair/child") {
+            if (forwardedFor != null) header(HttpHeaders.XForwardedFor, forwardedFor)
             contentType(ContentType.Application.Json)
             setBody("""{"code":"$code","name":"$name"}""")
         }
