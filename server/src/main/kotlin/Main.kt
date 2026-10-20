@@ -1,6 +1,8 @@
 package familytracker
 
 import familytracker.db.Database
+import familytracker.routes.RateLimiter
+import familytracker.routes.childPairRoute
 import familytracker.routes.pairRoutes
 import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.json
@@ -31,11 +33,16 @@ fun Application.module(config: Config) {
     // The Database constructor applies the schema, so the file is ready before routing starts.
     val database = Database(config.dbPath)
 
+    // One limiter per application instance: failures are shared across requests but do
+    // not leak between tests or restarts.
+    val rateLimiter = RateLimiter()
+
     routing {
         get("/health") {
             call.respondText("ok", ContentType.Text.Plain)
         }
         pairRoutes(database, config)
+        childPairRoute(database, rateLimiter)
     }
 }
 
