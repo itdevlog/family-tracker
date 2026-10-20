@@ -4,3 +4,4 @@ build/
 *.db-journal
 *.db-shm
 *.db-wal
+.kotlin/
