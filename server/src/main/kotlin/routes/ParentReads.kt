@@ -66,6 +66,12 @@ data class AckSosRequest(
     @SerialName("event_id") val eventId: String,
 )
 
+/** Maximum span accepted by `/locations`; keeps one history query cheap. */
+const val MAX_HISTORY_RANGE_MS = 31L * 24 * 60 * 60 * 1000
+
+/** Maximum points returned by one `/locations` request. */
+const val MAX_HISTORY_POINTS = 100_000
+
 /**
  * Parent-side read endpoints: the family overview, location history and the SOS feed.
  *
@@ -94,7 +100,7 @@ fun Route.parentReads(database: Database) {
         val deviceId = deviceParam.toUuidOrNull()
         val from = fromParam.toEpochMillisOrNull()
         val to = toParam.toEpochMillisOrNull()
-        if (deviceId == null || from == null || to == null || from > to) {
+        if (deviceId == null || from == null || to == null || from > to || exceedsMaxRange(from, to)) {
             call.respond(HttpStatusCode.UnprocessableEntity, ErrorResponse("invalid query"))
             return@get
         }
@@ -106,7 +112,15 @@ fun Route.parentReads(database: Database) {
             return@get
         }
 
-        val points = database.query { locationHistory(it, deviceId, from, to) }
+        // Fetch one extra row: if it is present the response would be too large and is
+        // refused before any of it is serialized.
+        val points = database.query {
+            locationHistory(it, deviceId, from, to, MAX_HISTORY_POINTS + 1)
+        }
+        if (points.size > MAX_HISTORY_POINTS) {
+            call.respond(HttpStatusCode.PayloadTooLarge, ErrorResponse("range too large"))
+            return@get
+        }
         call.respond(points.map { it.toDto() })
     }
 
@@ -181,6 +195,16 @@ private fun SosEvent.toDto(): SosEventDto = SosEventDto(
 )
 
 private fun Long.toIsoString(): String = Instant.ofEpochMilli(this).toString()
+
+/**
+ * True when `to - from` exceeds [MAX_HISTORY_RANGE_MS]. Uses [Math.subtractExact] so a
+ * difference that itself overflows a Long is treated as too large rather than wrapping.
+ */
+private fun exceedsMaxRange(from: Long, to: Long): Boolean = try {
+    Math.subtractExact(to, from) > MAX_HISTORY_RANGE_MS
+} catch (_: ArithmeticException) {
+    true
+}
 
 private fun String.toUuidOrNull(): UUID? = try {
     UUID.fromString(this)

@@ -94,6 +94,21 @@ class ParentReadsTest {
     }
 
     @Test
+    fun `devices excludes children of another family`() = testApplication {
+        application { module(config()) }
+        val parent = client.createParent()
+        val own = childOf(parent, "Own")
+        val foreign = insertForeignFamilyChild()
+        insertPoints(foreign, listOf(PointIn(9.0, 9.0, null, null, BASE)))
+
+        val response = client.getRead("/devices", parent.token())
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val devices = response.array().map { it.jsonObject }
+        assertEquals(listOf(own.deviceId), devices.map { it.uuid("device_id") })
+    }
+
+    @Test
     fun `devices is empty before any child is paired`() = testApplication {
         application { module(config()) }
         val parent = client.createParent()
@@ -126,6 +141,7 @@ class ParentReadsTest {
         application { module(config()) }
         val parent = client.createParent()
         val child = childOf(parent, "Kid")
+        val other = childOf(parent, "Other")
         insertPoints(
             child.deviceId,
             listOf(
@@ -136,6 +152,8 @@ class ParentReadsTest {
                 PointIn(55.4, 37.4, null, null, BASE + 3_000),
             ),
         )
+        // A sibling of the same family must never leak into this device's history.
+        insertPoints(other.deviceId, listOf(PointIn(99.0, 99.0, null, null, BASE + 500)))
 
         val response = client.getRead(
             "/locations",
@@ -146,6 +164,10 @@ class ParentReadsTest {
         assertEquals(HttpStatusCode.OK, response.status)
         val points = response.array().map { it.jsonObject }
         assertEquals(3, points.size)
+        assertEquals(
+            listOf(55.2, 55.1, 55.0),
+            points.map { it.getValue("lat").jsonPrimitive.double },
+        )
         assertEquals(
             listOf(BASE, BASE + 1_000, BASE + 2_000),
             points.map { Instant.parse(it.string("recorded_at")).toEpochMilli() },
@@ -195,6 +217,45 @@ class ParentReadsTest {
 
         assertEquals(HttpStatusCode.UnprocessableEntity, response.status)
         assertEquals("invalid query", response.error())
+    }
+
+    @Test
+    fun `locations rejects a range longer than thirty one days`() = testApplication {
+        application { module(config()) }
+        val parent = client.createParent()
+        val child = childOf(parent, "Kid")
+        val query = { to: Long ->
+            mapOf(
+                "device" to child.deviceId.toString(),
+                "from" to iso(BASE),
+                "to" to iso(to),
+            )
+        }
+
+        val boundary = client.getRead("/locations", parent.token(), query(BASE + MAX_RANGE_MS))
+        assertEquals(HttpStatusCode.OK, boundary.status)
+        assertTrue(boundary.array().isEmpty())
+
+        val tooLong = client.getRead("/locations", parent.token(), query(BASE + MAX_RANGE_MS + 1))
+        assertEquals(HttpStatusCode.UnprocessableEntity, tooLong.status)
+        assertEquals("invalid query", tooLong.error())
+    }
+
+    @Test
+    fun `locations rejects more than the maximum number of points`() = testApplication {
+        application { module(config()) }
+        val parent = client.createParent()
+        val child = childOf(parent, "Kid")
+        insertManyPoints(child.deviceId, count = 100_001, start = BASE)
+
+        val response = client.getRead(
+            "/locations",
+            parent.token(),
+            mapOf("device" to child.deviceId.toString(), "from" to iso(BASE), "to" to iso(BASE + 200_000)),
+        )
+
+        assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
+        assertEquals("range too large", response.error())
     }
 
     @Test
@@ -472,6 +533,25 @@ class ParentReadsTest {
             deviceId
         }
 
+    private fun insertManyPoints(deviceId: UUID, count: Int, start: Long) {
+        Database(config().dbPath).withConnection { conn ->
+            conn.prepareStatement(
+                """
+                INSERT INTO locations(device_id, lat, lon, accuracy, speed, recorded_at)
+                WITH RECURSIVE seq(x) AS (
+                    SELECT 0 UNION ALL SELECT x + 1 FROM seq WHERE x < ? - 1
+                )
+                SELECT ?, 55.0, 37.0, NULL, NULL, ? + x FROM seq
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInt(1, count)
+                statement.setString(2, deviceId.toString())
+                statement.setLong(3, start)
+                statement.executeUpdate()
+            }
+        }
+    }
+
     private suspend fun HttpClient.getRead(
         path: String,
         token: String? = null,
@@ -507,5 +587,6 @@ class ParentReadsTest {
 
     private companion object {
         const val BASE = 1_700_000_000_000L
+        const val MAX_RANGE_MS = 31L * 24 * 60 * 60 * 1000
     }
 }

@@ -293,15 +293,22 @@ fun childrenWithLastLocation(conn: Connection, familyId: UUID): List<DeviceSumma
         }
     }
 
-fun locationHistory(conn: Connection, deviceId: UUID, from: Long, to: Long): List<PointIn> =
+fun locationHistory(
+    conn: Connection,
+    deviceId: UUID,
+    from: Long,
+    to: Long,
+    limit: Int = Int.MAX_VALUE,
+): List<PointIn> =
     conn.prepareStatement(
         "SELECT lat, lon, accuracy, speed, recorded_at FROM locations " +
             "WHERE device_id = ? AND recorded_at >= ? AND recorded_at <= ? " +
-            "ORDER BY recorded_at ASC",
+            "ORDER BY recorded_at ASC LIMIT ?",
     ).use { statement ->
         statement.setString(1, deviceId.toString())
         statement.setLong(2, from)
         statement.setLong(3, to)
+        statement.setInt(4, limit)
         statement.executeQuery().use { result ->
             buildList {
                 while (result.next()) {

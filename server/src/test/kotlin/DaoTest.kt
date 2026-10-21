@@ -227,6 +227,26 @@ class DaoTest {
     }
 
     @Test
+    fun `locationHistory honours the row limit`() {
+        val child = addChild(createFamily(), "Kid")
+        db.withConnection {
+            insertLocations(
+                it,
+                child.deviceId,
+                (0 until 5).map { index ->
+                    PointIn(index.toDouble(), index.toDouble(), null, null, 1_000L + index * 1_000L)
+                },
+            )
+        }
+
+        val limited = db.withConnection { locationHistory(it, child.deviceId, 0L, Long.MAX_VALUE, 2) }
+        val unlimited = db.withConnection { locationHistory(it, child.deviceId, 0L, Long.MAX_VALUE) }
+
+        assertEquals(listOf(1_000L, 2_000L), limited.map { it.recordedAt })
+        assertEquals(5, unlimited.size)
+    }
+
+    @Test
     fun `childrenWithLastLocation returns newest point or null`() {
         val parent = createFamily()
         val alpha = addChild(parent, "Alpha")
