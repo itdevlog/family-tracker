@@ -3,9 +3,17 @@
 }
 
 {$API_DOMAIN} {
+    # The API only accepts small JSON batches (100 points is a few KB).
+    request_body {
+        max_size 256KB
+    }
     reverse_proxy ktor:8080
 }
 
 {$NTFY_DOMAIN} {
+    # This deployment only uses short SOS messages, not attachments.
+    request_body {
+        max_size 256KB
+    }
     reverse_proxy ntfy:8585
 }

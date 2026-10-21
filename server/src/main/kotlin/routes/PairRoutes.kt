@@ -70,7 +70,7 @@ fun Route.pairRoutes(database: Database, config: Config) {
                     familyId = registration.familyId.toString(),
                     token = registration.token,
                     ntfy = NtfyInfo(
-                        url = config.ntfyUrl,
+                        url = config.ntfyPublicUrl,
                         topic = registration.ntfyTopic,
                         token = config.ntfyToken,
                     ),

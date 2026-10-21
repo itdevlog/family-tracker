@@ -25,7 +25,9 @@ services:
     restart: unless-stopped
     environment:
       DB_PATH: /data/tracker.db
-      NTFY_URL: https://${NTFY_DOMAIN:?set NTFY_DOMAIN in deploy/.env}
+      # Internal address used by ktor to publish; NTFY_PUBLIC_URL is what phones receive.
+      NTFY_URL: http://ntfy:8585
+      NTFY_PUBLIC_URL: https://${NTFY_DOMAIN:?set NTFY_DOMAIN in deploy/.env}
       NTFY_TOKEN: ${NTFY_TOKEN:?set NTFY_TOKEN in deploy/.env}
     volumes:
       - tracker_data:/data

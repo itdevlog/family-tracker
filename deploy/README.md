@@ -38,6 +38,8 @@ NTFY_TOKEN=tk_...
 
 Все четыре переменные обязательны: compose-подстановки используют `${VAR:?…}` и падают с понятной ошибкой, если значение не задано. На первом шаге `NTFY_TOKEN` может остаться заглушкой `tk_...` из примера — настоящий токен вы выпустите ниже и замените значение в `.env`.
 
+Внутри compose `ktor` публикует в ntfy по внутреннему адресу `http://ntfy:8585` (`NTFY_URL`), а телефонам в ответе `/pair/parent` отдаётся публичный `https://$NTFY_DOMAIN` (`NTFY_PUBLIC_URL`, выводится из `NTFY_DOMAIN`). Отдельно задавать его в `.env` не нужно.
+
 ## Пользователь и токен ntfy
 
 ntfy настроен как приватный (`auth-default-access: deny-all`, `enable-signup: false`), поэтому без токена не читается и не пишется ни одна тема.
@@ -128,6 +130,8 @@ docker compose ps                          # у всех сервисов State:
 
 > **Сразу после деплоя выполните первичную привязку.** Пока семьи нет, `POST /pair/parent` открыт без авторизации: любой, кто узнал адрес сервера, может создать семью и занять единственный слот. Не оставляйте сервер развёрнутым без привязки.
 
+> **`POST /pair/parent` — это замена первого запуска приложения, а не подготовка к нему.** Если выполнить curl ниже, семья и родительское устройство уже созданы; приложение при первом запуске попытается зарегистрироваться само и получит `409 Conflict`. Выберите один путь: либо curl, либо первый запуск приложения. Если curl уже выполнен, а приложение ещё не настроено, сбросьте семью (раздел «Сброс семьи») и пройдите привязку в приложении.
+
 `POST /pair/parent` работает только пока семьи нет (повторный вызов — `409`):
 
 ```bash
@@ -161,6 +165,33 @@ curl -sS -X POST 'https://api.example.com/pair/code' \
 
 В приложении ребёнка укажите base URL `https://api.example.com` и отсканируйте QR / введите код. Код одноразовый и короткоживущий.
 
+## Сброс семьи
+
+Семья — это одна запись в SQLite; отдельной «удалить семью» API нет. Сброс выполняется удалением файлов БД (с бэкапом), после чего приложение снова проходит первичную привязку. Все выданные ранее токены (родителя и детей) станут недействительны, детей нужно привязать заново.
+
+```bash
+# 1. Остановить стек, чтобы SQLite не держала открытые файлы.
+docker compose down
+
+# 2. Бэкап текущего volume (на всякий случай; см. также раздел «Бэкап»).
+mkdir -p backup
+docker run --rm \
+  -v family-tracker_tracker_data:/data:ro \
+  -v "$PWD/backup:/backup" \
+  alpine sh -c 'tar czf /backup/tracker-before-reset-$(date +%F-%H%M).tgz -C /data .'
+
+# 3. Удалить БД и её WAL/SHM-файлы. Остальное содержимое volume не трогаем.
+docker run --rm \
+  -v family-tracker_tracker_data:/data \
+  alpine sh -c 'rm -f /data/tracker.db /data/tracker.db-wal /data/tracker.db-shm'
+
+# 4. Запустить стек и выполнить первичную привязку заново.
+docker compose up -d
+curl https://api.example.com/health
+```
+
+Volume `ntfy_lib` (пользователи/токены ntfy) при сбросе семьи можно не удалять: он не содержит данных семьи. Если нужно сбросить и ntfy-доступ, удалите его отдельно и заново создайте пользователя и токен по разделу выше.
+
 ## Бэкап
 
 SQLite и auth-файл ntfy нельзя копировать «на живую»: сначала остановите сервисы.
@@ -192,29 +223,71 @@ docker compose start
 
 ## Восстановление
 
-Стек должен быть остановлен, чтобы не перезаписать открытую БД:
+Сначала **проверьте архивы, ничего не останавливая и не удаляя**. `tar tzf` должен прочитать архив, а внутри должны быть нужные файлы (`tracker.db` для БД, `user.db` для ntfy auth/ACL). Если проверка упала — не выполняйте команды восстановления: volume останется нетронутым.
+
+```bash
+mkdir -p backup
+
+# tracker_data: архив читается и содержит tracker.db
+docker run --rm -v "$PWD/backup:/backup:ro" alpine sh -c '
+  set -eu
+  tar tzf /backup/tracker-YYYY-MM-DD.tgz >/dev/null
+  tar tzf /backup/tracker-YYYY-MM-DD.tgz | grep -Eq "(^|/)tracker\.db$"
+  echo "tracker archive OK"
+'
+
+# ntfy_lib: архив читается и содержит user.db
+docker run --rm -v "$PWD/backup:/backup:ro" alpine sh -c '
+  set -eu
+  tar tzf /backup/ntfy-lib-YYYY-MM-DD.tgz >/dev/null
+  tar tzf /backup/ntfy-lib-YYYY-MM-DD.tgz | grep -Eq "(^|/)user\.db$"
+  echo "ntfy archive OK"
+'
+```
+
+Только после успешной проверки остановите стек и распакуйте архивы. Распаковка идёт в `/tmp` внутри контейнера, проверяется ещё раз, и лишь затем заменяет содержимое volume — ошибка чтения архива не оставит пустой volume:
 
 ```bash
 docker compose down
-mkdir -p backup
 
 # tracker_data (файлы БД)
 docker run --rm \
   -v family-tracker_tracker_data:/data \
-  -v "$PWD/backup:/backup" \
-  alpine sh -c 'rm -rf /data/* && tar xzf /backup/tracker-YYYY-MM-DD.tgz -C /data'
+  -v "$PWD/backup:/backup:ro" \
+  alpine sh -c '
+    set -eu
+    rm -rf /tmp/restore && mkdir -p /tmp/restore
+    tar xzf /backup/tracker-YYYY-MM-DD.tgz -C /tmp/restore
+    test -f /tmp/restore/tracker.db
+    rm -rf /data/*
+    cp -a /tmp/restore/. /data/
+  '
 
 # ntfy auth/ACL
 docker run --rm \
   -v family-tracker_ntfy_lib:/lib \
-  -v "$PWD/backup:/backup" \
-  alpine sh -c 'rm -rf /lib/* && tar xzf /backup/ntfy-lib-YYYY-MM-DD.tgz -C /lib'
+  -v "$PWD/backup:/backup:ro" \
+  alpine sh -c '
+    set -eu
+    rm -rf /tmp/restore && mkdir -p /tmp/restore
+    tar xzf /backup/ntfy-lib-YYYY-MM-DD.tgz -C /tmp/restore
+    test -f /tmp/restore/user.db
+    rm -rf /lib/*
+    cp -a /tmp/restore/. /lib/
+  '
 
 # опционально — кэш сообщений
 docker run --rm \
   -v family-tracker_ntfy_cache:/cache \
-  -v "$PWD/backup:/backup" \
-  alpine sh -c 'rm -rf /cache/* && tar xzf /backup/ntfy-cache-YYYY-MM-DD.tgz -C /cache'
+  -v "$PWD/backup:/backup:ro" \
+  alpine sh -c '
+    set -eu
+    rm -rf /tmp/restore && mkdir -p /tmp/restore
+    tar xzf /backup/ntfy-cache-YYYY-MM-DD.tgz -C /tmp/restore
+    test -f /tmp/restore/cache.db
+    rm -rf /cache/*
+    cp -a /tmp/restore/. /cache/
+  '
 
 docker compose up -d
 curl https://api.example.com/health
@@ -239,6 +312,8 @@ curl https://api.example.com/health
 
 - Наружу опубликован только Caddy. Порты `8080` (ktor) и `8585` (ntfy) доступны лишь внутри compose-сети — в `docker-compose.yml` у них нет `ports:`, только `expose:`.
 - Caddy — единственный ingress и сам добавляет/дополняет `X-Forwarded-For`. Rate limiter в ktor берёт **правый** хоп заголовка (его пишет Caddy), левые значения клиент может подделать.
+- Размер тела запроса ограничен 256 KB на ingress (директива Caddy `request_body`) для API и ntfy. В Ktor 3.0.1 встроенного лимита тела нет, поэтому это единственная линия защиты; не публикуйте `ktor:8080` или `ntfy:8585` напрямую.
+- Повторный `POST /sos` от одного и того же ребёнка в течение 30 секунд подтверждается `204`, но не создаёт событие, WS-пуш или ntfy-уведомление — это гасит retry-циклы клиента и спам украденным детским токеном.
 - `auth-default-access: deny-all`: анонимно нельзя ни читать, ни публиковать; вход только по логину/паролю или токену.
 - `NTFY_TOKEN` принадлежит non-admin пользователю `tracker` с ACL только на `family-*`. Admin-аккаунт нужен лишь для веб-UI; его токен не передаётся в `.env`, ktor и приложение.
 - Токены и пароли — только в `deploy/.env` (в репозиторий не коммитится) и в ntfy volume. Не передавайте их в git, логи или скриншоты.

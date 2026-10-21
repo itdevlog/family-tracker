@@ -25,13 +25,26 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import java.util.UUID
 
-data class Config(val dbPath: String, val ntfyUrl: String, val ntfyToken: String) {
+data class Config(
+    val dbPath: String,
+    val ntfyUrl: String,
+    val ntfyToken: String,
+    /**
+     * Public ntfy base URL handed to devices in the pairing response. Defaults to
+     * [ntfyUrl] so existing deployments and tests keep their behaviour.
+     */
+    val ntfyPublicUrl: String = ntfyUrl,
+) {
     companion object {
-        fun fromEnv(env: Map<String, String> = System.getenv()): Config = Config(
-            dbPath = env["DB_PATH"] ?: "family-tracker.db",
-            ntfyUrl = env["NTFY_URL"] ?: "",
-            ntfyToken = env["NTFY_TOKEN"] ?: "",
-        )
+        fun fromEnv(env: Map<String, String> = System.getenv()): Config {
+            val ntfyUrl = env["NTFY_URL"] ?: ""
+            return Config(
+                dbPath = env["DB_PATH"] ?: "family-tracker.db",
+                ntfyUrl = ntfyUrl,
+                ntfyToken = env["NTFY_TOKEN"] ?: "",
+                ntfyPublicUrl = env["NTFY_PUBLIC_URL"] ?: ntfyUrl,
+            )
+        }
     }
 }
 
@@ -41,6 +54,8 @@ fun Application.module(
         { _, _, _ -> },
     ntfy: NtfyPublisher = HttpNtfyPublisher(config.ntfyUrl, config.ntfyToken),
     database: Database = Database(config.dbPath),
+    sosCooldownMs: Long = 30_000,
+    now: () -> Long = System::currentTimeMillis,
 ) {
     install(ContentNegotiation) {
         json()
@@ -65,7 +80,7 @@ fun Application.module(
             broadcaster.broadcastLocations(familyId, deviceId, points)
         }
         liveRoutes(database, broadcaster)
-        sosRoute(database, broadcaster, ntfy)
+        sosRoute(database, broadcaster, ntfy, sosCooldownMs, now)
         parentReads(database)
     }
 }

@@ -19,6 +19,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import org.slf4j.LoggerFactory
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+
+private val logger = LoggerFactory.getLogger("familytracker.routes.SosRoute")
 
 @Serializable
 data class SosRequest(
@@ -32,10 +37,30 @@ data class SosRequest(
  * The event is stored first, then pushed to the family's live sockets, and only then
  * forwarded to ntfy. The response is 204 once the event is stored, even when the push
  * notification fails: the emergency is already persisted and visible to parents.
+ *
+ * Repeats from the same child within [cooldownMs] are acknowledged with 204 without
+ * storing, broadcasting or publishing anything. This absorbs client retry loops and
+ * prevents a stolen child token from spamming the family. The cooldown state is
+ * in-memory and per application instance, which is enough for the single-family server.
  */
-fun Route.sosRoute(database: Database, broadcaster: LiveBroadcaster, ntfy: NtfyPublisher) {
+fun Route.sosRoute(
+    database: Database,
+    broadcaster: LiveBroadcaster,
+    ntfy: NtfyPublisher,
+    cooldownMs: Long = 30_000,
+    now: () -> Long = System::currentTimeMillis,
+) {
+    val lastSosAt = ConcurrentHashMap<UUID, Long>()
+
     post("/sos") {
         val child = call.requireChild(database) ?: return@post
+
+        // Check before reading the body: a retrying client should not even be parsed.
+        val previous = lastSosAt[child.id]
+        if (previous != null && now() - previous < cooldownMs) {
+            call.respond(HttpStatusCode.NoContent)
+            return@post
+        }
 
         val request = try {
             call.receive<SosRequest>()
@@ -62,13 +87,17 @@ fun Route.sosRoute(database: Database, broadcaster: LiveBroadcaster, ntfy: NtfyP
         // Database failures intentionally propagate: without a stored event there is
         // nothing to acknowledge, so the child must see a 5xx and retry.
         val event = database.query { conn -> insertSos(conn, child.id, request.lat, request.lon) }
+        // Start the cooldown only after the event is durable; a failed insert must not
+        // silence the child's retry.
+        lastSosAt[child.id] = now()
         broadcaster.broadcastSos(child.familyId, child.id, event.id, event.lat, event.lon, event.createdAt)
 
+        val topic = "family-${child.familyId}-sos"
         try {
             // The publisher is blocking (java.net.http), so keep it off the request threads.
             withContext(Dispatchers.IO) {
                 ntfy.publish(
-                    topic = "family-${child.familyId}-sos",
+                    topic = topic,
                     title = "SOS",
                     body = "Ребёнок ${child.name} просит помощи",
                     priority = 5,
@@ -76,9 +105,16 @@ fun Route.sosRoute(database: Database, broadcaster: LiveBroadcaster, ntfy: NtfyP
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             // Best effort: the event is already in the database and was already pushed to
             // live sockets, so a failed notification must not turn the report into an error.
+            // Log only the topic, child id and error type: never the token or coordinates.
+            logger.warn(
+                "sos notification failed: topic={} child={} error={}",
+                topic,
+                child.id,
+                error.javaClass.simpleName,
+            )
         }
 
         call.respond(HttpStatusCode.NoContent)

@@ -69,6 +69,37 @@ class PairRoutesTest {
     }
 
     @Test
+    fun `public ntfy url defaults to the internal url when unset`() {
+        val internalOnly = Config.fromEnv(mapOf("NTFY_URL" to "http://ntfy:8585"))
+        assertEquals("http://ntfy:8585", internalOnly.ntfyUrl)
+        assertEquals("http://ntfy:8585", internalOnly.ntfyPublicUrl)
+
+        val explicit = Config.fromEnv(
+            mapOf(
+                "NTFY_URL" to "http://ntfy:8585",
+                "NTFY_PUBLIC_URL" to "https://ntfy.example",
+            ),
+        )
+        assertEquals("https://ntfy.example", explicit.ntfyPublicUrl)
+    }
+
+    @Test
+    fun `parent response advertises the public ntfy url`() = testApplication {
+        application {
+            module(
+                config().copy(
+                    ntfyUrl = "http://ntfy:8585",
+                    ntfyPublicUrl = "https://ntfy.example",
+                ),
+            )
+        }
+
+        val parent = client.createParent()
+
+        assertEquals("https://ntfy.example", parent["ntfy"]!!.jsonObject.string("url"))
+    }
+
+    @Test
     fun `second parent registration is rejected with conflict`() = testApplication {
         application { module(config()) }
 

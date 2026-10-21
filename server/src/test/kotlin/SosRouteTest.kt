@@ -1,5 +1,6 @@
 package familytracker
 
+import com.sun.net.httpserver.HttpServer
 import familytracker.db.ChildRegistration
 import familytracker.db.Database
 import familytracker.db.RedeemResult
@@ -32,10 +33,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
+import java.net.InetSocketAddress
 import java.nio.file.Path
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -195,6 +200,67 @@ class SosRouteTest {
             assertEquals(stored.id.toString(), event.string("event_id"))
             assertFalse(stored.acknowledged)
         }
+    }
+
+    @Test
+    fun `sos publishes to the internal ntfy url while pairing advertises the public one`() = testApplication {
+        val captured = CompletableFuture<String>()
+        val httpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        httpServer.createContext("/") { exchange ->
+            exchange.requestBody.readAllBytes()
+            captured.complete(exchange.requestURI.toString())
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        httpServer.start()
+        try {
+            val internalUrl = "http://127.0.0.1:${httpServer.address.port}"
+            val publicUrl = "https://ntfy.example"
+            application {
+                module(config().copy(ntfyUrl = internalUrl, ntfyPublicUrl = publicUrl))
+            }
+            val parent = client.createParent()
+            assertEquals(publicUrl, parent["ntfy"]!!.jsonObject.string("url"))
+
+            val child = childOf(parent, "Kid")
+            val response = client.postSos(child.token, """{"lat":55.7,"lon":37.6}""")
+
+            assertEquals(HttpStatusCode.NoContent, response.status)
+            assertEquals("/", captured.get(5, TimeUnit.SECONDS))
+        } finally {
+            httpServer.stop(0)
+        }
+    }
+
+    @Test
+    fun `repeated sos is suppressed per child for thirty seconds`() = testApplication {
+        val ntfy = RecordingNtfy()
+        val clock = AtomicLong(1_000_000L)
+        application { module(config(), ntfy = ntfy, now = clock::get) }
+        val parent = client.createParent()
+        val child = childOf(parent, "Kid")
+        val familyId = UUID.fromString(parent.string("family_id"))
+
+        assertEquals(HttpStatusCode.NoContent, client.postSos(child.token, """{"lat":55.7,"lon":37.6}""").status)
+        assertEquals(1, ntfy.calls.size)
+        assertEquals(1, sosEvents(familyId).size)
+
+        clock.addAndGet(29_999)
+        assertEquals(HttpStatusCode.NoContent, client.postSos(child.token, """{"lat":55.8,"lon":37.7}""").status)
+        assertEquals(1, ntfy.calls.size)
+        assertEquals(1, sosEvents(familyId).size)
+
+        // The cooldown is per child: a sibling may report immediately.
+        val sibling = childOf(parent, "Sibling")
+        assertEquals(HttpStatusCode.NoContent, client.postSos(sibling.token, """{"lat":55.9,"lon":37.8}""").status)
+        assertEquals(2, ntfy.calls.size)
+        assertEquals(2, sosEvents(familyId).size)
+
+        // Exactly at the end of the window the first child may report again.
+        clock.addAndGet(1)
+        assertEquals(HttpStatusCode.NoContent, client.postSos(child.token, """{"lat":55.7,"lon":37.6}""").status)
+        assertEquals(3, ntfy.calls.size)
+        assertEquals(3, sosEvents(familyId).size)
     }
 
     private suspend fun io.ktor.client.plugins.websocket.DefaultClientWebSocketSession.receiveEvent(): JsonObject {
