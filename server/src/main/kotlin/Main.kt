@@ -3,12 +3,15 @@ package familytracker
 import familytracker.db.Database
 import familytracker.db.PointIn
 import familytracker.live.LiveBroadcaster
+import familytracker.ntfy.HttpNtfyPublisher
+import familytracker.ntfy.NtfyPublisher
 import familytracker.routes.RateLimiter
 import familytracker.routes.childPairRoute
 import familytracker.routes.liveRoutes
 import familytracker.routes.locationsRoutes
 import familytracker.routes.pairRoutes
 import familytracker.routes.parentReads
+import familytracker.routes.sosRoute
 import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -36,6 +39,7 @@ fun Application.module(
     config: Config,
     onLocationsInserted: (familyId: UUID, deviceId: UUID, points: List<PointIn>) -> Unit =
         { _, _, _ -> },
+    ntfy: NtfyPublisher = HttpNtfyPublisher(config.ntfyUrl, config.ntfyToken),
 ) {
     install(ContentNegotiation) {
         json()
@@ -63,6 +67,7 @@ fun Application.module(
             broadcaster.broadcastLocations(familyId, deviceId, points)
         }
         liveRoutes(database, broadcaster)
+        sosRoute(database, broadcaster, ntfy)
         parentReads(database)
     }
 }
