@@ -180,6 +180,52 @@ class LiveTest {
     }
 
     @Test
+    fun `batch events arrive in recorded at order`() = testApplication {
+        application { module(config()) }
+        val parent = client.createParent()
+        val child = childOf(parent)
+
+        val wsClient = createClient { install(WebSockets) }
+        wsClient.webSocket("/live?token=${parent.string("token")}") {
+            delay(registrationDelay)
+            assertEquals(HttpStatusCode.NoContent, client.postLocations(child.token, batch(3)).status)
+
+            val timestamps = receiveEvents(3).map { it.string("recorded_at") }
+            assertEquals(
+                (0 until 3).map { Instant.ofEpochMilli(BASE_TIME + it).toString() },
+                timestamps,
+            )
+        }
+    }
+
+    @Test
+    fun `a new parent socket receives events after an earlier one closes`() = testApplication {
+        application { module(config()) }
+        val parent = client.createParent()
+        val child = childOf(parent)
+        val token = parent.string("token")
+
+        val firstClient = createClient { install(WebSockets) }
+        firstClient.webSocket("/live?token=$token") {
+            delay(registrationDelay)
+        }
+        // Let the server observe the close and release the session's room slot.
+        delay(registrationDelay)
+
+        val secondClient = createClient { install(WebSockets) }
+        coroutineScope {
+            val events = async { secondClient.collectEvents(token, 1) }
+            delay(registrationDelay)
+            assertEquals(HttpStatusCode.NoContent, client.postLocations(child.token, batch(1)).status)
+
+            assertEquals(
+                listOf(Instant.ofEpochMilli(BASE_TIME).toString()),
+                events.await().map { it.string("recorded_at") },
+            )
+        }
+    }
+
+    @Test
     fun `upload succeeds when nobody is subscribed`() = testApplication {
         application { module(config()) }
         val parent = client.createParent()

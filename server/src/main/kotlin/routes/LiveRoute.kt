@@ -35,7 +35,7 @@ fun Route.liveRoutes(database: Database, broadcaster: LiveBroadcaster) {
         try {
             // The client has nothing to say yet; reading keeps the connection open and
             // notices the close frame (or a dropped peer) so the session can be released.
-            for (frame in incoming) {
+            for (ignored in incoming) {
                 // Ignore application frames until a client-to-server message is specified.
             }
         } finally {

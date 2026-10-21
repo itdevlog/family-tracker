@@ -59,7 +59,7 @@ fun Application.module(
         childPairRoute(database, rateLimiter)
         locationsRoutes(database) { familyId, deviceId, points ->
             onLocationsInserted(familyId, deviceId, points)
-            points.forEach { broadcaster.broadcastLocation(familyId, deviceId, it) }
+            broadcaster.broadcastLocations(familyId, deviceId, points)
         }
         liveRoutes(database, broadcaster)
     }
