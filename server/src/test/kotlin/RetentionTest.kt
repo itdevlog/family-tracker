@@ -11,9 +11,11 @@ import familytracker.db.RedeemResult
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class RetentionTest {
@@ -68,15 +70,16 @@ class RetentionTest {
     }
 
     @Test
-    fun `scheduled retention runs immediately and removes expired points`() {
-        val expired = System.currentTimeMillis() - 31 * day
-        insertPoint(expired)
-
-        val executor = scheduleRetention(db, periodMs = 3_600_000)
+    fun `scheduled retention repeats the run and removes points inserted later`() {
+        val now = 1_800_000_000_000L
+        val executor = scheduleRetention(db, periodMs = 50, now = { now })
         try {
+            // Inserted after scheduleRetention returned: only a later tick can remove it.
+            insertPoint(now - 31 * day)
+
             val deadline = System.currentTimeMillis() + 5_000
             while (recordedAts().isNotEmpty() && System.currentTimeMillis() < deadline) {
-                Thread.sleep(25)
+                Thread.sleep(10)
             }
             assertTrue(recordedAts().isEmpty(), "expired point was not removed within 5s")
         } finally {
@@ -85,8 +88,44 @@ class RetentionTest {
     }
 
     @Test
+    fun `a failing run does not stop the schedule`() {
+        val calls = AtomicInteger()
+        val executor = scheduleRetention(
+            db,
+            periodMs = 50,
+            run = {
+                if (calls.incrementAndGet() <= 2) throw RuntimeException("transient failure")
+                0
+            },
+        )
+        try {
+            val deadline = System.currentTimeMillis() + 5_000
+            while (calls.get() < 3 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10)
+            }
+            assertTrue(calls.get() >= 3, "scheduler stopped after a failing run: ${calls.get()} calls")
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `non-positive period is rejected`() {
+        assertFailsWith<IllegalArgumentException> {
+            scheduleRetention(db, periodMs = 0)
+        }
+    }
+
+    @Test
+    fun `extreme now does not delete anything`() {
+        insertPoint(1_000L)
+
+        assertEquals(0, runRetentionOnce(db, Long.MIN_VALUE))
+        assertEquals(listOf(1_000L), recordedAts())
+    }
+
+    @Test
     fun `retention window is thirty days`() {
-        assertEquals(2_592_000_000L, LOCATION_RETENTION_MS)
         assertEquals(30L * 24 * 60 * 60 * 1000, LOCATION_RETENTION_MS)
     }
 }
