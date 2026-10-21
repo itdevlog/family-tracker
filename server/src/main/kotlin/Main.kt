@@ -40,14 +40,12 @@ fun Application.module(
     onLocationsInserted: (familyId: UUID, deviceId: UUID, points: List<PointIn>) -> Unit =
         { _, _, _ -> },
     ntfy: NtfyPublisher = HttpNtfyPublisher(config.ntfyUrl, config.ntfyToken),
+    database: Database = Database(config.dbPath),
 ) {
     install(ContentNegotiation) {
         json()
     }
     install(WebSockets)
-
-    // The Database constructor applies the schema, so the file is ready before routing starts.
-    val database = Database(config.dbPath)
 
     // One limiter per application instance: failures are shared across requests but do
     // not leak between tests or restarts.
@@ -73,7 +71,11 @@ fun Application.module(
 }
 
 fun main() {
+    val config = Config.fromEnv()
+    // The Database constructor applies the schema, so the file is ready before the server binds.
+    val database = Database(config.dbPath)
+    scheduleRetention(database)
     embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
-        module(Config.fromEnv())
+        module(config, database = database)
     }.start(wait = true)
 }
