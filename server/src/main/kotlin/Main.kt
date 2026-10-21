@@ -8,6 +8,7 @@ import familytracker.routes.childPairRoute
 import familytracker.routes.liveRoutes
 import familytracker.routes.locationsRoutes
 import familytracker.routes.pairRoutes
+import familytracker.routes.parentReads
 import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -62,6 +63,7 @@ fun Application.module(
             broadcaster.broadcastLocations(familyId, deviceId, points)
         }
         liveRoutes(database, broadcaster)
+        parentReads(database)
     }
 }
 

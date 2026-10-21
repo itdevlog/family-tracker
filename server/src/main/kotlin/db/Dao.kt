@@ -311,6 +311,19 @@ fun locationHistory(conn: Connection, deviceId: UUID, from: Long, to: Long): Lis
         }
     }
 
+/**
+ * True only when [deviceId] is a child device of [familyId]. Parents and devices of other
+ * families deliberately fail the check, so callers can treat every non-match as forbidden.
+ */
+fun childBelongsToFamily(conn: Connection, deviceId: UUID, familyId: UUID): Boolean =
+    conn.prepareStatement(
+        "SELECT 1 FROM devices WHERE id = ? AND family_id = ? AND role = 'child'",
+    ).use { statement ->
+        statement.setString(1, deviceId.toString())
+        statement.setString(2, familyId.toString())
+        statement.executeQuery().use { it.next() }
+    }
+
 fun insertSos(conn: Connection, childId: UUID, lat: Double, lon: Double): SosEvent {
     val id = UUID.randomUUID()
     val createdAt = System.currentTimeMillis()
