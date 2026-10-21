@@ -1,0 +1,11 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+    reverse_proxy ktor:8080
+}
+
+{$NTFY_DOMAIN} {
+    reverse_proxy ntfy:8585
+}

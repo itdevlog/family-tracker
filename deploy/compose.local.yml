@@ -1,0 +1,11 @@
+# Local HTTP-only run, merged over docker-compose.yml:
+#   docker compose -f docker-compose.yml -f compose.local.yml up -d --build
+#
+# `!override` drops the base 80/443 mapping so only :80 is published.
+# Requires Docker Compose >= 2.24.4.
+services:
+  caddy:
+    ports: !override
+      - "80:80"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro

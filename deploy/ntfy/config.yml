@@ -1,0 +1,6 @@
+listen-http: ":8585"
+cache-file: "/var/cache/ntfy/cache.db"
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+behind-proxy: true
+enable-signup: false

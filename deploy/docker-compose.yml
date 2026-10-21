@@ -1,0 +1,55 @@
+name: family-tracker
+
+services:
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      NTFY_DOMAIN: ${NTFY_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - ktor
+      - ntfy
+
+  ktor:
+    build: ../server
+    restart: unless-stopped
+    environment:
+      DB_PATH: /data/tracker.db
+      NTFY_URL: https://${NTFY_DOMAIN}
+      NTFY_TOKEN: ${NTFY_TOKEN}
+    volumes:
+      - tracker_data:/data
+    expose:
+      - "8080"
+    depends_on:
+      - ntfy
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    restart: unless-stopped
+    command: serve --config /etc/ntfy/server.yml
+    environment:
+      NTFY_BASE_URL: https://${NTFY_DOMAIN}
+    volumes:
+      - ./ntfy/config.yml:/etc/ntfy/server.yml:ro
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_lib:/var/lib/ntfy
+    expose:
+      - "8585"
+
+volumes:
+  caddy_data:
+  caddy_config:
+  tracker_data:
+  ntfy_cache:
+  ntfy_lib:
