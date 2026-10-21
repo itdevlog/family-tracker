@@ -23,6 +23,7 @@
 
 ```bash
 cp .env.example .env
+chmod 600 .env
 $EDITOR .env
 ```
 
@@ -35,11 +36,16 @@ ACME_EMAIL=you@example.com
 NTFY_TOKEN=tk_...
 ```
 
-`NTFY_TOKEN` появится на следующем шаге.
+Все четыре переменные обязательны: compose-подстановки используют `${VAR:?…}` и падают с понятной ошибкой, если значение не задано. На первом шаге `NTFY_TOKEN` может остаться заглушкой `tk_...` из примера — настоящий токен вы выпустите ниже и замените значение в `.env`.
 
 ## Пользователь и токен ntfy
 
 ntfy настроен как приватный (`auth-default-access: deny-all`, `enable-signup: false`), поэтому без токена не читается и не пишется ни одна тема.
+
+Нужны **две разные учётные записи**:
+
+- `tracker` — роль `user` (не admin), только ACL на `family-*` read-write. Её токен идёт в `NTFY_TOKEN`: ktor публикует SOS, приложение родителя читает эти же темы. Скомпрометированный телефон получает доступ только к темам семьи.
+- `admin` — роль `admin`, только для входа в веб-UI/администрирования. **Токен admin в `.env` не попадает и приложению не передаётся.**
 
 Поднимите только ntfy (остальное можно позже):
 
@@ -48,32 +54,58 @@ docker compose up -d ntfy
 docker compose logs -f ntfy
 ```
 
-Создайте пользователя (пароль вводится интерактивно, дважды):
+Создайте рабочего пользователя (пароль вводится интерактивно, дважды):
 
 ```bash
-docker compose exec ntfy ntfy user add --role=admin tracker
+docker compose exec ntfy ntfy user add --role=user tracker
 ```
 
-Выпустите токен для этого пользователя и скопируйте `tk_...` в `.env` как `NTFY_TOKEN`:
-
-```bash
-docker compose exec ntfy ntfy token add --label=ktor tracker
-```
-
-Явно выдайте доступ к темам семьи (кавычки обязательны, иначе сработает glob shell):
+Выдайте ему доступ к темам семьи (кавычки обязательны, иначе сработает glob shell):
 
 ```bash
 docker compose exec ntfy ntfy access tracker 'family-*' read-write
 ```
 
-Роль `admin` и так даёт доступ ко всем темам; запись `family-*` оставлена как явная декларация (и продолжит работать, если роль понизят). Один и тот же токен используют ktor (публикация SOS) и приложение родителя (подписка на `family-<family_id>-sos`).
+Read-write нужен обоим: ktor публикует (`/sos`), parent-приложение подписывается на `family-<family_id>-sos`.
 
-Проверка, что ntfy жив:
+Выпустите токен и скопируйте `tk_...` в `.env` как `NTFY_TOKEN`:
+
+```bash
+docker compose exec ntfy ntfy token add --label=family-tracker tracker
+```
+
+При необходимости создайте отдельного admin для веб-UI — **его токен никуда не копируйте**, входите паролем:
+
+```bash
+docker compose exec ntfy ntfy user add --role=admin admin
+```
+
+Проверка, что ntfy жив (не проверяет токен):
 
 ```bash
 curl -u tracker 'https://ntfy.example.com/v1/health'
 # {"healthy":true}
 ```
+
+### Проверка самого NTFY_TOKEN
+
+`/v1/health` отвечает и без авторизации, поэтому ошибку в `NTFY_TOKEN` он не покажет. Проверьте публикацию и чтение именно тем токеном из `.env`:
+
+```bash
+set -a; . ./.env; set +a
+
+# публикация (ACL family-* покрывает topic)
+curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
+  -d "healthcheck" "https://$NTFY_DOMAIN/family-healthcheck"
+# {"id":"...","time":...,"event":"message","topic":"family-healthcheck","message":"healthcheck"}
+
+# чтение из кэша
+curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
+  "https://$NTFY_DOMAIN/family-healthcheck/json?poll=1"
+# строка JSON с "message":"healthcheck"
+```
+
+Topic намеренно называется `family-healthcheck`: он попадает под ACL `family-*`, поэтому проверяет ровно те права, которые нужны ktor и приложению. Если вторая команда вернула `403`, проверьте ACL; если первая — `401`, токен в `.env` неверный. Тестовое сообщение живёт в кэше ntfy ограниченное время (по умолчанию 12 ч) и уходит само.
 
 ## Запуск
 
@@ -87,12 +119,14 @@ docker compose logs -f ktor
 ```bash
 curl https://api.example.com/health        # ok
 curl -u tracker https://ntfy.example.com/v1/health
-docker compose ps                          # caddy healthy, ktor/ntfy running
+docker compose ps                          # у всех сервисов State: Up (healthcheck'ов нет)
 ```
 
 Если Caddy не получает сертификат, смотрите `docker compose logs caddy`: чаще всего это DNS или закрытый 80/443.
 
 ## Первичная привязка
+
+> **Сразу после деплоя выполните первичную привязку.** Пока семьи нет, `POST /pair/parent` открыт без авторизации: любой, кто узнал адрес сервера, может создать семью и занять единственный слот. Не оставляйте сервер развёрнутым без привязки.
 
 `POST /pair/parent` работает только пока семьи нет (повторный вызов — `409`):
 
@@ -156,9 +190,45 @@ docker compose start
 
 В `tracker_data` лежат `tracker.db` и WAL-файлы (`tracker.db-wal`, `tracker.db-shm`), поэтому архивируется весь каталог. Альтернатива без остановки — `sqlite3 .../tracker.db ".backup '/backup/tracker.db'"` на хосте (нужен пакет `sqlite3`, путь к `_data` тома зависит от Docker root).
 
-## Обновление
+## Восстановление
+
+Стек должен быть остановлен, чтобы не перезаписать открытую БД:
 
 ```bash
+docker compose down
+mkdir -p backup
+
+# tracker_data (файлы БД)
+docker run --rm \
+  -v family-tracker_tracker_data:/data \
+  -v "$PWD/backup:/backup" \
+  alpine sh -c 'rm -rf /data/* && tar xzf /backup/tracker-YYYY-MM-DD.tgz -C /data'
+
+# ntfy auth/ACL
+docker run --rm \
+  -v family-tracker_ntfy_lib:/lib \
+  -v "$PWD/backup:/backup" \
+  alpine sh -c 'rm -rf /lib/* && tar xzf /backup/ntfy-lib-YYYY-MM-DD.tgz -C /lib'
+
+# опционально — кэш сообщений
+docker run --rm \
+  -v family-tracker_ntfy_cache:/cache \
+  -v "$PWD/backup:/backup" \
+  alpine sh -c 'rm -rf /cache/* && tar xzf /backup/ntfy-cache-YYYY-MM-DD.tgz -C /cache'
+
+docker compose up -d
+curl https://api.example.com/health
+```
+
+`rm -rf` внутри volume удаляет только содержимое тома. Перед восстановлением убедитесь, что архивы на месте и вы восстанавливаете именно volume этого проекта.
+
+## Обновление
+
+Сначала бэкап (раздел выше), только потом обновление кода:
+
+```bash
+# 1. бэкап: docker compose stop ktor ntfy + архивы, как выше
+# 2. обновление
 git pull
 docker compose up -d --build
 docker compose ps
@@ -170,25 +240,37 @@ curl https://api.example.com/health
 - Наружу опубликован только Caddy. Порты `8080` (ktor) и `8585` (ntfy) доступны лишь внутри compose-сети — в `docker-compose.yml` у них нет `ports:`, только `expose:`.
 - Caddy — единственный ingress и сам добавляет/дополняет `X-Forwarded-For`. Rate limiter в ktor берёт **правый** хоп заголовка (его пишет Caddy), левые значения клиент может подделать.
 - `auth-default-access: deny-all`: анонимно нельзя ни читать, ни публиковать; вход только по логину/паролю или токену.
+- `NTFY_TOKEN` принадлежит non-admin пользователю `tracker` с ACL только на `family-*`. Admin-аккаунт нужен лишь для веб-UI; его токен не передаётся в `.env`, ktor и приложение.
 - Токены и пароли — только в `deploy/.env` (в репозиторий не коммитится) и в ntfy volume. Не передавайте их в git, логи или скриншоты.
 - Приложение обязано работать по HTTPS; HTTP-режим ниже — только для локальной отладки.
 
 ## Локальный HTTP-прогон (без TLS и домена)
 
-Нужны те же `.env` (домены можно фиктивные, например `api.localhost`/`ntfy.localhost`), но проверяется только `/health` через Caddy на `:80`. ntfy в этом режиме не обязателен.
+> **Не запускать на production-хосте.** Локальный стек публикует `:80` (конфликт с prod-Caddy) и поднимает собственные контейнеры. Отдельное имя проекта защищает только volumes от prod-данных, но не порты. Это режим для локальной машины/стенда.
+
+Нужны те же четыре переменные `.env` (домены можно фиктивные, например `api.localhost`/`ntfy.localhost`; `NTFY_TOKEN` может быть любым непустым, например `tk_local` — для `/health` он не используется). Все `${VAR:?}`-подстановки обязательны и здесь.
+
+`-p family-tracker-local` даёт отдельные volume'ы `family-tracker-local_*`, не пересекающиеся с production `family-tracker_*`:
 
 ```bash
-docker compose -f docker-compose.yml -f compose.local.yml up -d --build
+docker compose -p family-tracker-local \
+  -f docker-compose.yml -f compose.local.yml up -d --build
+
 curl http://localhost/health          # ok
-docker compose -f docker-compose.yml -f compose.local.yml logs -f caddy
+
+docker compose -p family-tracker-local \
+  -f docker-compose.yml -f compose.local.yml ps
 ```
 
 Локальный override монтирует `Caddyfile.local` (`auto_https off`, `:80` → `ktor:8080`) и через `ports: !override` публикует только `80:80`.
 
+Запускаются все три сервиса, включая ntfy: `ktor` объявляет `depends_on: ntfy`, поэтому ntfy поднимается всегда. Для самой проверки `/health` ntfy не нужен, но контейнер будет запущен.
+
 Остановка:
 
 ```bash
-docker compose -f docker-compose.yml -f compose.local.yml down
+docker compose -p family-tracker-local \
+  -f docker-compose.yml -f compose.local.yml down
 ```
 
 TLS, сертификаты, ntfy auth и привязка устройств проверяются только на реальном сервере с доменами: локальный режим покрывает лишь маршрутизацию Caddy → ktor.

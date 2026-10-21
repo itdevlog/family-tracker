@@ -9,9 +9,9 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      API_DOMAIN: ${API_DOMAIN}
-      NTFY_DOMAIN: ${NTFY_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in deploy/.env}
+      NTFY_DOMAIN: ${NTFY_DOMAIN:?set NTFY_DOMAIN in deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -25,8 +25,8 @@ services:
     restart: unless-stopped
     environment:
       DB_PATH: /data/tracker.db
-      NTFY_URL: https://${NTFY_DOMAIN}
-      NTFY_TOKEN: ${NTFY_TOKEN}
+      NTFY_URL: https://${NTFY_DOMAIN:?set NTFY_DOMAIN in deploy/.env}
+      NTFY_TOKEN: ${NTFY_TOKEN:?set NTFY_TOKEN in deploy/.env}
     volumes:
       - tracker_data:/data
     expose:
@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
     command: serve --config /etc/ntfy/server.yml
     environment:
-      NTFY_BASE_URL: https://${NTFY_DOMAIN}
+      NTFY_BASE_URL: https://${NTFY_DOMAIN:?set NTFY_DOMAIN in deploy/.env}
     volumes:
       - ./ntfy/config.yml:/etc/ntfy/server.yml:ro
       - ntfy_cache:/var/cache/ntfy
