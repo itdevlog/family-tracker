@@ -43,9 +43,6 @@ data class LocationPoint(
     @SerialName("recorded_at") val recordedAt: String,
 )
 
-/** `Points` history and upload share the same JSON shape. */
-typealias HistoryPoint = LocationPoint
-
 /** Upload batch; `device_id` is deliberately absent because the server takes it from the token. */
 @Serializable
 data class LocationsRequest(val points: List<LocationPoint>)

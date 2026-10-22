@@ -22,6 +22,12 @@ import org.junit.Test
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ApiException
 import ru.family.tracker.data.api.LocationPoint
+import ru.family.tracker.data.api.PointIn
+import ru.family.tracker.data.api.normalizeBaseUrl
+import ru.family.tracker.data.api.toPointIn
+import ru.family.tracker.data.api.toWire
+import java.io.IOException
+import java.time.Instant
 import kotlin.test.assertFailsWith
 
 /**
@@ -59,8 +65,8 @@ class ApiClientTest {
     }
 
     @Test
-    fun `registerParent posts name without bearer`() = runTest {
-        val registration = api(token = null) { request ->
+    fun `registerParent posts name without bearer even with a stale token`() = runTest {
+        val registration = api(token = "stale") { request ->
             assertEquals(HttpMethod.Post, request.method)
             assertEquals("/pair/parent", request.url.encodedPath)
             assertNull(request.headers[HttpHeaders.Authorization])
@@ -90,8 +96,8 @@ class ApiClientTest {
     }
 
     @Test
-    fun `redeemChildCode posts code and name without bearer`() = runTest {
-        val registration = api(token = null) { request ->
+    fun `redeemChildCode posts code and name without bearer even with a stale token`() = runTest {
+        val registration = api(token = "stale") { request ->
             assertEquals(HttpMethod.Post, request.method)
             assertEquals("/pair/child", request.url.encodedPath)
             assertNull(request.headers[HttpHeaders.Authorization])
@@ -136,9 +142,9 @@ class ApiClientTest {
     @Test
     fun `uploadPoints posts bearer batch with iso timestamps`() = runTest {
         val points = listOf(
-            LocationPoint(55.75, 37.61, accuracy = 5f, speed = 1.5f, recordedAt = "2026-10-20T12:00:00Z"),
-            LocationPoint(55.76, 37.62, recordedAt = "2026-10-20T12:00:30Z"),
-            LocationPoint(55.77, 37.63, recordedAt = "2026-10-20T12:01:00Z"),
+            PointIn(55.75, 37.61, 5f, 1.5f, Instant.parse("2026-10-20T12:00:00Z").toEpochMilli()),
+            PointIn(55.76, 37.62, recordedAtMillis = Instant.parse("2026-10-20T12:00:30Z").toEpochMilli()),
+            PointIn(55.77, 37.63, recordedAtMillis = Instant.parse("2026-10-20T12:01:00Z").toEpochMilli()),
         )
 
         api { request ->
@@ -176,7 +182,7 @@ class ApiClientTest {
     @Test
     fun `uploadPoints rejects more than 100 points before the network`() = runTest {
         val client = api()
-        val points = List(101) { LocationPoint(0.0, 0.0, recordedAt = "2026-10-20T12:00:00Z") }
+        val points = List(101) { PointIn(0.0, 0.0, recordedAtMillis = 0) }
 
         assertFailsWith<IllegalArgumentException> {
             client.uploadPoints(points)
@@ -186,7 +192,7 @@ class ApiClientTest {
     }
 
     @Test
-    fun `history encodes device from and to as query parameters`() = runTest {
+    fun `history encodes device from and to and returns domain points`() = runTest {
         val from = "2026-01-01T00:00:00+03:00"
         val to = "2026-01-02T00:00:00+03:00"
         val points = api { request ->
@@ -208,21 +214,36 @@ class ApiClientTest {
         assertEquals(37.61, points[0].lon, 0.0)
         assertEquals(3f, points[0].accuracy)
         assertEquals(2f, points[0].speed)
-        assertEquals("2026-01-01T10:00:00Z", points[0].recordedAt)
+        assertEquals(Instant.parse("2026-01-01T10:00:00Z").toEpochMilli(), points[0].recordedAtMillis)
     }
 
     @Test
-    fun `sosList sends since in epoch millis`() = runTest {
+    fun `sosList omits since when called without an argument`() = runTest {
         val events = api { request ->
             assertEquals(HttpMethod.Get, request.method)
             assertEquals("/sos", request.url.encodedPath)
             assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
-            assertEquals("1700000000000", request.url.parameters["since"])
+            assertNull(request.url.parameters["since"])
+            assertFalse(request.url.encodedQuery.contains("since"))
+            HttpStatusCode.OK to "[]"
+        }.sosList()
+
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `sosList sends since as an iso timestamp`() = runTest {
+        val since = "2026-10-20T10:00:00Z"
+        val events = api { request ->
+            assertEquals(HttpMethod.Get, request.method)
+            assertEquals("/sos", request.url.encodedPath)
+            assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
+            assertEquals(since, request.url.parameters["since"])
             HttpStatusCode.OK to """
                 [{"event_id":"evt-1","child":"child-1","lat":55.75,"lon":37.61,
-                  "created_at":"2026-01-01T10:00:00Z","acknowledged":false}]
+                  "created_at":"2026-10-20T10:00:00Z","acknowledged":false}]
             """.trimIndent()
-        }.sosList(1_700_000_000_000)
+        }.sosList(since)
 
         assertEquals(1, events.size)
         assertEquals("evt-1", events[0].eventId)
@@ -240,6 +261,24 @@ class ApiClientTest {
             assertEquals("evt-1", sent["event_id"]!!.jsonPrimitive.content)
             HttpStatusCode.NoContent to ""
         }.ackSos("evt-1")
+
+        assertEquals(1, requests.size)
+    }
+
+    @Test
+    fun `sendSos posts bearer and exactly lat lon`() = runTest {
+        api { request ->
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/sos", request.url.encodedPath)
+            assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
+
+            val sent = json.parseToJsonElement(bodyText(request)).jsonObject
+            assertEquals(setOf("lat", "lon"), sent.keys)
+            assertEquals(55.75, sent["lat"]!!.jsonPrimitive.content.toDouble(), 0.0)
+            assertEquals(37.61, sent["lon"]!!.jsonPrimitive.content.toDouble(), 0.0)
+
+            HttpStatusCode.NoContent to ""
+        }.sendSos(55.75, 37.61)
 
         assertEquals(1, requests.size)
     }
@@ -265,6 +304,77 @@ class ApiClientTest {
         assertEquals("Петя", devices[1].name)
         assertEquals(55.75, devices[1].lastLocation!!.lat, 0.0)
         assertEquals("2026-01-01T10:00:00Z", devices[1].lastLocation!!.recordedAt)
+    }
+
+    @Test
+    fun `all authenticated calls send the bearer from the provider`() = runTest {
+        val client = api(token = "stale") { request ->
+            assertEquals("Bearer stale", request.headers[HttpHeaders.Authorization])
+            when {
+                request.url.encodedPath == "/pair/code" ->
+                    HttpStatusCode.OK to """{"code":"123456","expires_at":"2026-10-20T12:00:00Z"}"""
+
+                request.url.encodedPath == "/devices" ->
+                    HttpStatusCode.OK to "[]"
+
+                request.url.encodedPath == "/locations" && request.method == HttpMethod.Get ->
+                    HttpStatusCode.OK to "[]"
+
+                request.url.encodedPath == "/locations" ->
+                    HttpStatusCode.NoContent to ""
+
+                request.url.encodedPath == "/sos" && request.method == HttpMethod.Get ->
+                    HttpStatusCode.OK to "[]"
+
+                request.url.encodedPath == "/sos" ->
+                    HttpStatusCode.NoContent to ""
+
+                request.url.encodedPath == "/sos/ack" ->
+                    HttpStatusCode.NoContent to ""
+
+                else -> error("unexpected request ${request.method} ${request.url}")
+            }
+        }
+
+        client.createPairCode()
+        client.devices()
+        client.history("child-1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z")
+        client.uploadPoints(listOf(PointIn(1.0, 2.0, recordedAtMillis = 0)))
+        client.sendSos(1.0, 2.0)
+        client.ackSos("evt-1")
+        client.sosList("2026-01-01T00:00:00Z")
+
+        assertEquals(7, requests.size)
+    }
+
+    @Test
+    fun `points round trip through the wire format`() {
+        val original = PointIn(
+            lat = 55.75,
+            lon = 37.61,
+            accuracy = 5f,
+            speed = 1.5f,
+            recordedAtMillis = 1_700_000_000_000,
+        )
+
+        val wire = original.toWire()
+
+        assertEquals("2023-11-14T22:13:20Z", wire.recordedAt)
+        assertEquals(original, wire.toPointIn())
+
+        val withoutExtras = PointIn(-1.5, 2.5, recordedAtMillis = 0)
+        assertEquals(withoutExtras, withoutExtras.toWire().toPointIn())
+        assertNull(withoutExtras.toWire().accuracy)
+        assertNull(withoutExtras.toWire().speed)
+    }
+
+    @Test
+    fun `malformed recorded_at fails mapping with a clear exception`() {
+        val wire = LocationPoint(1.0, 2.0, recordedAt = "not-a-timestamp")
+
+        val error = assertFailsWith<IllegalArgumentException> { wire.toPointIn() }
+
+        assertTrue(error.message!!.contains("ISO-8601"))
     }
 
     @Test
@@ -300,14 +410,86 @@ class ApiClientTest {
     }
 
     @Test
-    fun `204 responses are accepted for upload sendSos and ack`() = runTest {
+    fun `base url is validated and normalized`() {
+        assertEquals("https://api.example.net", normalizeBaseUrl("https://api.example.net/"))
+        assertEquals("https://api.example.net", normalizeBaseUrl("  https://api.example.net  "))
+        assertEquals("http://192.168.1.10:8080", normalizeBaseUrl("http://192.168.1.10:8080"))
+
+        assertFailsWith<IllegalArgumentException> { normalizeBaseUrl("https://api.example.net/api") }
+        assertFailsWith<IllegalArgumentException> { normalizeBaseUrl("https://api.example.net?x=1") }
+        assertFailsWith<IllegalArgumentException> { normalizeBaseUrl("https://api.example.net#frag") }
+        assertFailsWith<IllegalArgumentException> { normalizeBaseUrl("ftp://api.example.net") }
+        assertFailsWith<IllegalArgumentException> { normalizeBaseUrl("https://") }
+    }
+
+    @Test
+    fun `invalid base url fails before any request`() = runTest {
+        var called = false
+        val client = api(baseUrl = "https://api.example.net/api") {
+            called = true
+            HttpStatusCode.OK to "{}"
+        }
+
+        assertFailsWith<IllegalArgumentException> {
+            client.devices()
+        }
+
+        assertFalse(called)
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun `204 responses are accepted for upload and ack`() = runTest {
         val client = api { HttpStatusCode.NoContent to "" }
 
-        client.uploadPoints(listOf(LocationPoint(1.0, 2.0, recordedAt = "2026-10-20T12:00:00Z")))
-        client.sendSos(55.75, 37.61)
+        client.uploadPoints(listOf(PointIn(1.0, 2.0, recordedAtMillis = 0)))
         client.ackSos("evt-1")
 
-        assertEquals(3, requests.size)
+        assertEquals(2, requests.size)
+    }
+
+    @Test
+    fun `non-json error body keeps the status with a null server error`() = runTest {
+        val client = api {
+            HttpStatusCode.InternalServerError to "<html>boom</html>"
+        }
+
+        val error = assertFailsWith<ApiException> {
+            client.devices()
+        }
+
+        assertEquals(500, error.status)
+        assertNull(error.serverError)
+    }
+
+    @Test
+    fun `conflict and rate limit statuses are preserved`() = runTest {
+        var status = HttpStatusCode.Conflict
+        val client = api {
+            status to """{"error":"family exists"}"""
+        }
+
+        val conflict = assertFailsWith<ApiException> { client.createPairCode() }
+        assertEquals(409, conflict.status)
+        assertEquals("family exists", conflict.serverError)
+
+        status = HttpStatusCode.TooManyRequests
+        val limited = assertFailsWith<ApiException> { client.createPairCode() }
+        assertEquals(429, limited.status)
+        assertEquals("family exists", limited.serverError)
+    }
+
+    @Test
+    fun `transport IOException is not converted to ApiException`() = runTest {
+        val client = api {
+            throw IOException("offline")
+        }
+
+        val error = assertFailsWith<IOException> {
+            client.devices()
+        }
+
+        assertEquals("offline", error.message)
     }
 
     private companion object {
