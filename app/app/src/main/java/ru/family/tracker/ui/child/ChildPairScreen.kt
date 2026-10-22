@@ -1,5 +1,6 @@
 package ru.family.tracker.ui.child
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -64,6 +65,8 @@ fun ChildPairScreen(
             onResult = { raw ->
                 val payload = parseQrPayload(raw)
                 if (payload == null) {
+                    // Stay on the pairing screen and explain that this QR code is not
+                    // ours; the user can scan again or switch to manual entry.
                     scanRejected = true
                 } else {
                     serverUrl = payload.server
@@ -78,6 +81,10 @@ fun ChildPairScreen(
         )
         return
     }
+
+    // A pairing code is single-use: leaving the screen mid-request may already have
+    // redeemed it, so the back gesture is ignored until the request finishes.
+    BackHandler(enabled = busy) { }
 
     Column(
         modifier = Modifier

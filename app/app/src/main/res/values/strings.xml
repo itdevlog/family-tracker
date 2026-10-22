@@ -13,7 +13,7 @@
     <string name="parent_register_server_support">Полный адрес со схемой, без пути: https://api.example.net</string>
     <string name="parent_register_name_label">Ваше имя</string>
     <string name="parent_register_submit">Создать семью</string>
-    <string name="parent_register_error_invalid_url">Адрес сервера должен быть полным, вида https://api.example.net (без пути, query и fragment).</string>
+    <string name="parent_register_error_invalid_url">Адрес сервера должен быть полным https-адресом, вида https://api.example.net (без пути, query и fragment). HTTP не поддерживается.</string>
     <string name="parent_register_error_empty_name">Введите имя.</string>
     <string name="parent_register_error_conflict">На сервере уже создана семья. Войти без токена нельзя — обратитесь к тому, кто её создал.</string>
     <string name="parent_register_error_server">Ошибка на сервере. Попробуйте позже.</string>
@@ -49,13 +49,12 @@
     <string name="child_pair_server_support">Полный адрес со схемой, без пути: https://api.example.net</string>
     <string name="child_pair_code_label">Код из 6 цифр</string>
     <string name="child_pair_submit">Привязать</string>
-    <string name="child_pair_change_scan">Сканировать другой код</string>
     <string name="child_pair_confirm_title">Проверьте данные</string>
     <string name="child_pair_confirm_server">Сервер: %1$s</string>
     <string name="child_pair_confirm_code">Код: %1$s</string>
     <string name="child_pair_confirm_name">Имя: %1$s</string>
     <string name="child_pair_confirm_name_empty">Имя не указано — заполните поле выше.</string>
-    <string name="child_pair_error_invalid_server">Адрес сервера должен быть полным, вида https://api.example.net (без пути, query и fragment).</string>
+    <string name="child_pair_error_invalid_server">Адрес сервера должен быть полным https-адресом, вида https://api.example.net (без пути, query и fragment). HTTP не поддерживается.</string>
     <string name="child_pair_error_invalid_code">Введите ровно 6 цифр из кода привязки.</string>
     <string name="child_pair_error_empty_name">Введите имя ребёнка.</string>
     <string name="child_pair_error_code_used">Этот код уже использован. Попросите родителя создать новый.</string>

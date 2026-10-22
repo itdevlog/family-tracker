@@ -74,9 +74,11 @@ class PairingPayloadTest {
     }
 
     @Test
-    fun `server with a path is rejected`() {
+    fun `server must be https without path query or fragment`() {
         assertNull(parseQrPayload(qrPayload("https://api.example.net/api", "123456")))
         assertNull(parseQrPayload(qrPayload("https://api.example.net/?a=1", "123456")))
+        assertNull(parseQrPayload(qrPayload("https://api.example.net/#frag", "123456")))
+        assertNull(parseQrPayload(qrPayload("http://api.example.net", "123456")))
         assertNull(parseQrPayload(qrPayload("ftp://api.example.net", "123456")))
     }
 

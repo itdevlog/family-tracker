@@ -6,6 +6,7 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,11 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -85,6 +90,14 @@ class ChildPairViewModelTest {
         assertEquals(Role.CHILD, settings.role)
         assertEquals(1, requests.size)
         assertEquals("/pair/child", requests[0].url.encodedPath)
+        // The code is a secret-like one-time value: it must travel only in the POST body.
+        assertNull(requests[0].url.parameters["code"])
+        assertFalse(requests[0].url.encodedQuery.contains("123456"))
+        val sent = Json.parseToJsonElement(
+            (requests[0].body as TextContent).text,
+        ).jsonObject
+        assertEquals("123456", sent["code"]!!.jsonPrimitive.content)
+        assertEquals("Миша", sent["name"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -96,6 +109,7 @@ class ChildPairViewModelTest {
             HttpStatusCode.TooManyRequests to R.string.child_pair_error_too_many_attempts,
             HttpStatusCode.ServiceUnavailable to R.string.child_pair_error_server_busy,
             HttpStatusCode.InternalServerError to R.string.child_pair_error_server,
+            HttpStatusCode.BadRequest to R.string.child_pair_error_unknown,
         )
 
         for ((status, messageRes) in cases) {

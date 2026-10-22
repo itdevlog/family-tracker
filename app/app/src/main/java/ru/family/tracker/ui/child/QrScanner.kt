@@ -52,17 +52,16 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import ru.family.tracker.R
-import ru.family.tracker.data.pairing.parseQrPayload
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Full-screen QR scanner built on CameraX and ML Kit.
  *
- * Only QR barcodes whose text is a valid [parseQrPayload] payload are delivered, so a
- * random QR code on a poster does not abort pairing. The first accepted code stops
- * analysis and calls [onResult] exactly once; [onCancel] returns to manual entry, both
- * from the cancel button and from the system back gesture.
+ * The first QR code with text stops analysis and calls [onResult] exactly once with the
+ * raw contents; payload validation belongs to the caller, which can stay on the pairing
+ * screen and explain that the QR code is not a Family Tracker code. [onCancel] returns to
+ * manual entry, both from the cancel button and from the system back gesture.
  *
  * If the CAMERA permission is denied or the camera cannot start, the screen explains the
  * problem and offers manual entry — pairing never depends on the scanner.
@@ -221,14 +220,31 @@ private fun CameraPreview(
         // Analysis runs on every camera frame; the flag stops it after the first hit and
         // also prevents overlapping ML Kit tasks on slow devices.
         val delivered = AtomicBoolean(false)
+        // Provider initialization and ML Kit callbacks are asynchronous, so they can land
+        // after the screen is gone (rotation, back press, permission loss). The flag makes
+        // a late bind unbind instead of attaching to a detached PreviewView and keeps
+        // callbacks from touching Compose state or a released executor.
+        val disposed = AtomicBoolean(false)
         var provider: ProcessCameraProvider? = null
         var analysis: ImageAnalysis? = null
 
         val bindListener = Runnable {
-            try {
-                val cameraProvider = providerFuture.get()
-                provider = cameraProvider
+            val cameraProvider = try {
+                providerFuture.get()
+            } catch (_: Exception) {
+                if (!disposed.get()) currentOnCameraFailed()
+                return@Runnable
+            }
 
+            if (disposed.get()) {
+                // Disposed while the provider was initializing: release anything this
+                // listener would otherwise leave bound and never create the analyzer.
+                cameraProvider.unbindAll()
+                return@Runnable
+            }
+
+            provider = cameraProvider
+            try {
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
@@ -239,9 +255,11 @@ private fun CameraPreview(
                     .also { imageAnalysis ->
                         analysis = imageAnalysis
                         imageAnalysis.setAnalyzer(analysisExecutor) { image ->
-                            analyzeFrame(image, scanner, delivered) { raw ->
-                                imageAnalysis.clearAnalyzer()
-                                currentOnQrPayload(raw)
+                            analyzeFrame(image, scanner, delivered, disposed) { raw ->
+                                if (!disposed.get()) {
+                                    imageAnalysis.clearAnalyzer()
+                                    currentOnQrPayload(raw)
+                                }
                             }
                         }
                     }
@@ -254,12 +272,17 @@ private fun CameraPreview(
                     imageAnalysis,
                 )
             } catch (_: Exception) {
-                currentOnCameraFailed()
+                if (!disposed.get()) currentOnCameraFailed()
             }
         }
         providerFuture.addListener(bindListener, mainExecutor)
 
         onDispose {
+            // The ProcessCameraProvider future is process-wide and cannot be un-listened
+            // or cancelled safely; the disposed flag turns a listener that runs later into
+            // a no-op. Disposing before the new scanner starts also prevents an old
+            // onDispose from unbinding a newly bound camera.
+            disposed.set(true)
             provider?.unbindAll()
             analysis?.clearAnalyzer()
             analysisExecutor.shutdown()
@@ -276,42 +299,58 @@ private fun CameraPreview(
 /**
  * Feeds one frame to ML Kit and closes it when the task completes.
  *
- * Only the frame that wins [delivered] is processed; if it held no valid pairing QR code
- * the flag is cleared so scanning continues with the next frame.
+ * Only the frame that wins [delivered] is processed. A frame without a decodable QR code
+ * clears the flag so the next frame can be analysed; once a code is found, the flag stays
+ * set and no further callback is made. Payload interpretation is left to the caller.
  */
 private fun analyzeFrame(
     imageProxy: ImageProxy,
     scanner: BarcodeScanner,
     delivered: AtomicBoolean,
+    disposed: AtomicBoolean,
     onQrPayload: (String) -> Unit,
 ) {
-    val mediaImage = imageProxy.image
-    if (mediaImage == null || !delivered.compareAndSet(false, true)) {
+    if (disposed.get() || !delivered.compareAndSet(false, true)) {
         imageProxy.close()
         return
     }
 
-    val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-    scanner.process(input)
-        .addOnSuccessListener { barcodes ->
-            val raw = barcodes
-                .asSequence()
-                .filter { it.format == Barcode.FORMAT_QR_CODE }
-                .mapNotNull { it.rawValue }
-                .firstOrNull { parseQrPayload(it) != null }
+    try {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            delivered.set(false)
+            imageProxy.close()
+            return
+        }
 
-            if (raw != null) {
-                onQrPayload(raw)
-            } else {
+        val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        scanner.process(input)
+            .addOnSuccessListener { barcodes ->
+                if (disposed.get()) return@addOnSuccessListener
+
+                val raw = barcodes
+                    .asSequence()
+                    .filter { it.format == Barcode.FORMAT_QR_CODE }
+                    .mapNotNull { it.rawValue }
+                    .firstOrNull()
+
+                if (raw != null) {
+                    if (!disposed.get()) onQrPayload(raw)
+                } else {
+                    delivered.set(false)
+                }
+            }
+            .addOnFailureListener {
                 delivered.set(false)
             }
-        }
-        .addOnFailureListener {
-            delivered.set(false)
-        }
-        .addOnCompleteListener {
-            imageProxy.close()
-        }
+            .addOnCompleteListener {
+                imageProxy.close()
+            }
+    } catch (_: Exception) {
+        // A synchronous decode/registration failure must not leak the ImageProxy.
+        delivered.set(false)
+        imageProxy.close()
+    }
 }
 
 private fun hasCameraPermission(context: Context): Boolean =

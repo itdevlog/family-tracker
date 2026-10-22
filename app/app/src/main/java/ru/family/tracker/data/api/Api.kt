@@ -176,8 +176,10 @@ class ApiClient(
 /**
  * Validates and normalizes a configured server URL.
  *
- * Only absolute `http`/`https` URLs with a host are accepted; a lone trailing slash is
- * dropped. A path (other than `/`), query or fragment is rejected rather than silently
+ * Only absolute `https` URLs with a host are accepted; a lone trailing slash is dropped.
+ * Plain `http` is rejected: targetSdk 35 blocks cleartext traffic anyway, so failing here
+ * produces an actionable error instead of a confusing transport failure later.
+ * A path (other than `/`), query or fragment is rejected rather than silently
  * discarded, so a misconfigured base URL fails loudly instead of hitting the wrong route.
  */
 internal fun normalizeBaseUrl(raw: String?): String {
@@ -191,8 +193,8 @@ internal fun normalizeBaseUrl(raw: String?): String {
     }
 
     val scheme = uri.scheme?.lowercase()
-    if (scheme != "http" && scheme != "https") {
-        throw IllegalArgumentException("baseUrl must use http or https: $trimmed")
+    if (scheme != "https") {
+        throw IllegalArgumentException("baseUrl must use https: $trimmed")
     }
     if (uri.host.isNullOrBlank()) {
         throw IllegalArgumentException("baseUrl must contain a host: $trimmed")

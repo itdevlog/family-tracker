@@ -413,7 +413,11 @@ class ApiClientTest {
     fun `base url is validated and normalized`() {
         assertEquals("https://api.example.net", normalizeBaseUrl("https://api.example.net/"))
         assertEquals("https://api.example.net", normalizeBaseUrl("  https://api.example.net  "))
-        assertEquals("http://192.168.1.10:8080", normalizeBaseUrl("http://192.168.1.10:8080"))
+
+        val cleartext = assertFailsWith<IllegalArgumentException> {
+            normalizeBaseUrl("http://192.168.1.10:8080")
+        }
+        assertTrue(cleartext.message!!.contains("https"))
 
         assertFailsWith<IllegalArgumentException> { normalizeBaseUrl("https://api.example.net/api") }
         assertFailsWith<IllegalArgumentException> { normalizeBaseUrl("https://api.example.net?x=1") }
