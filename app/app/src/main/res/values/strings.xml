@@ -104,4 +104,36 @@
     <string name="child_sos_sent">Родитель получил сигнал</string>
     <string name="child_sos_pending">Пока не отправлено — отправим при появлении сети</string>
     <string name="child_sos_no_location">Ваше местоположение ещё не определено — сигнал отправлен без координат.</string>
+
+    <string name="child_wizard_open">Проверить настройки фона</string>
+    <string name="child_wizard_title">Работа в фоне</string>
+    <string name="child_wizard_intro">Телефон может усыплять приложения, чтобы экономить заряд. Разрешите Family Tracker работать в фоне, иначе местоположение будет обновляться с перерывами, а иногда отслеживание остановится совсем.</string>
+    <string name="child_wizard_step_title">%1$d. %2$s</string>
+    <string name="child_wizard_step_done">выполнено</string>
+    <string name="child_wizard_step_pending">не выполнено</string>
+    <string name="child_wizard_mark_done">✓</string>
+    <string name="child_wizard_mark_pending">○</string>
+    <string name="child_wizard_step_location_title">Геолокация «Всегда»</string>
+    <string name="child_wizard_step_location_description">В настройках приложения выберите для местоположения «Разрешить всегда». Без этого отслеживание остановится, когда экран погаснет.</string>
+    <string name="child_wizard_step_battery_title">Без ограничений батареи</string>
+    <string name="child_wizard_step_battery_description">Разрешите приложению работать без ограничений энергосбережения, чтобы система не останавливала его в фоне.</string>
+    <string name="child_wizard_step_autostart_title">Автозапуск (%1$s)</string>
+    <string name="child_wizard_step_autostart_description_xiaomi">Включите автозапуск для Family Tracker в приложении «Безопасность» (MIUI).</string>
+    <string name="child_wizard_step_autostart_description_samsung">Разрешите Family Tracker работу в фоне: «Батарея» → ограничения фоновой активности (Samsung).</string>
+    <string name="child_wizard_step_autostart_description_huawei">Включите Family Tracker в списке автозапуска «Диспетчера телефона» (EMUI).</string>
+    <string name="child_wizard_step_autostart_description_oppo">Включите автозапуск для Family Tracker в настройках ColorOS.</string>
+    <string name="child_wizard_step_autostart_description_other">Включите автозапуск для Family Tracker в настройках прошивки.</string>
+    <string name="child_wizard_vendor_xiaomi">Xiaomi</string>
+    <string name="child_wizard_vendor_samsung">Samsung</string>
+    <string name="child_wizard_vendor_huawei">Huawei</string>
+    <string name="child_wizard_vendor_oppo">OPPO</string>
+    <string name="child_wizard_vendor_other">прошивка</string>
+    <string name="child_wizard_open_settings">Открыть настройки</string>
+    <string name="child_wizard_manual_confirm">Я включил</string>
+    <string name="child_wizard_done">Готово</string>
+    <string name="child_wizard_skip">Продолжить без настройки</string>
+    <string name="child_wizard_skip_title">Продолжить без настройки?</string>
+    <string name="child_wizard_skip_text">Без этих разрешений телефон может усыплять приложение, и отслеживание будет останавливаться. Проверить настройки можно позже на главном экране.</string>
+    <string name="child_wizard_skip_confirm">Продолжить</string>
+    <string name="child_wizard_skip_cancel">Назад</string>
 </resources>

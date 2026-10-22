@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,6 +81,7 @@ fun ChildHomeScreen(
     sosSender: SosSender,
     settings: Settings,
     modifier: Modifier = Modifier,
+    onOpenWizard: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -191,11 +194,19 @@ fun ChildHomeScreen(
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-        Text(
-            text = stringResource(R.string.child_tracking_title),
-            style = MaterialTheme.typography.headlineSmall,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.child_tracking_title),
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onOpenWizard) {
+                Text(stringResource(R.string.child_wizard_open))
+            }
+        }
         TrackingControls(modifier = Modifier.fillMaxWidth())
     }
 }
