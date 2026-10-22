@@ -43,6 +43,6 @@ fun FamilyTrackerRoot(settings: Settings, api: ApiClient) {
             )
         }
         composable(Routes.PARENT) { ParentRoot(settings = settings, api = api) }
-        composable(Routes.CHILD) { ChildRoot() }
+        composable(Routes.CHILD) { ChildRoot(settings = settings, api = api) }
     }
 }

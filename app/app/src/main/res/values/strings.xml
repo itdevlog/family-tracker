@@ -39,4 +39,40 @@
 
     <string name="parent_home_coming_soon">Карта появится в следующей задаче</string>
     <string name="parent_home_show_qr">Показать QR для привязки ребёнка</string>
+
+    <string name="child_pair_title">Привязать телефон ребёнка</string>
+    <string name="child_pair_hint">Отсканируйте QR-код с телефона родителя или введите код из 6 цифр вручную.</string>
+    <string name="child_pair_name_label">Имя ребёнка</string>
+    <string name="child_pair_scan_qr">Сканировать QR</string>
+    <string name="child_pair_manual_title">Ввести код вручную</string>
+    <string name="child_pair_server_label">Адрес сервера</string>
+    <string name="child_pair_server_support">Полный адрес со схемой, без пути: https://api.example.net</string>
+    <string name="child_pair_code_label">Код из 6 цифр</string>
+    <string name="child_pair_submit">Привязать</string>
+    <string name="child_pair_change_scan">Сканировать другой код</string>
+    <string name="child_pair_confirm_title">Проверьте данные</string>
+    <string name="child_pair_confirm_server">Сервер: %1$s</string>
+    <string name="child_pair_confirm_code">Код: %1$s</string>
+    <string name="child_pair_confirm_name">Имя: %1$s</string>
+    <string name="child_pair_confirm_name_empty">Имя не указано — заполните поле выше.</string>
+    <string name="child_pair_error_invalid_server">Адрес сервера должен быть полным, вида https://api.example.net (без пути, query и fragment).</string>
+    <string name="child_pair_error_invalid_code">Введите ровно 6 цифр из кода привязки.</string>
+    <string name="child_pair_error_empty_name">Введите имя ребёнка.</string>
+    <string name="child_pair_error_code_used">Этот код уже использован. Попросите родителя создать новый.</string>
+    <string name="child_pair_error_code_invalid">Код не найден или истёк. Проверьте цифры или попросите новый код.</string>
+    <string name="child_pair_error_invalid_input">Сервер не принял данные. Проверьте имя и код.</string>
+    <string name="child_pair_error_too_many_attempts">Слишком много попыток. Подождите немного и повторите.</string>
+    <string name="child_pair_error_server_busy">Сервер перегружен. Попробуйте позже.</string>
+    <string name="child_pair_error_server">Ошибка на сервере. Попробуйте позже.</string>
+    <string name="child_pair_error_network">Не удалось связаться с сервером. Проверьте адрес и подключение к интернету.</string>
+    <string name="child_pair_error_unknown">Сервер вернул неожиданную ошибку. Повторите попытку.</string>
+    <string name="child_pair_error_scan">Этот QR-код не является кодом привязки Family Tracker.</string>
+    <string name="child_scan_title">Сканирование QR-кода</string>
+    <string name="child_scan_hint">Наведите камеру на QR-код с экрана телефона родителя.</string>
+    <string name="child_scan_camera_denied">Нет доступа к камере. Разрешите его или введите код вручную.</string>
+    <string name="child_scan_camera_error">Не удалось запустить камеру. Введите код вручную.</string>
+    <string name="child_scan_allow_camera">Разрешить камеру</string>
+    <string name="child_scan_manual">Ввести вручную</string>
+    <string name="child_scan_cancel">Отмена</string>
+    <string name="child_pair_success_placeholder">Телефон привязан. Трекинг появится в следующей задаче</string>
 </resources>
