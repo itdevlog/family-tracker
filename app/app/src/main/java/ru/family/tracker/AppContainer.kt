@@ -4,6 +4,7 @@ import android.content.Context
 import ru.family.tracker.child.FusedLocationSource
 import ru.family.tracker.child.LocationBufferWorker
 import ru.family.tracker.child.LocationSource
+import ru.family.tracker.child.SosSender
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.db.TrackerDatabase
 
@@ -34,4 +35,7 @@ class AppContainer(
     val api: ApiClient by lazy {
         apiOverride ?: ApiClient({ settings.baseUrl }, { settings.token })
     }
+
+    /** Offline-first SOS outbox shared by the home screen and both flush workers. */
+    val sosSender: SosSender by lazy { SosSender(room.sos(), api) }
 }

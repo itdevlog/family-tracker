@@ -95,4 +95,13 @@
     <string name="tracking_channel_description">Постоянное уведомление о работе отслеживания</string>
     <string name="tracking_notification_title">Отслеживание включено</string>
     <string name="tracking_notification_text">Точки отправляются на сервер</string>
+
+    <string name="child_sos_title">Экстренная помощь</string>
+    <string name="child_sos_button_label">SOS</string>
+    <string name="child_sos_button_description">Кнопка SOS. Удерживайте две секунды, чтобы отправить сигнал родителю.</string>
+    <string name="child_sos_hold_hint">Удерживайте 2 секунды</string>
+    <string name="child_sos_sending">Отправляем сигнал…</string>
+    <string name="child_sos_sent">Родитель получил сигнал</string>
+    <string name="child_sos_pending">Пока не отправлено — отправим при появлении сети</string>
+    <string name="child_sos_no_location">Ваше местоположение ещё не определено — сигнал отправлен без координат.</string>
 </resources>

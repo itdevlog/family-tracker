@@ -28,6 +28,7 @@ import ru.family.tracker.Role
 import ru.family.tracker.Settings
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.db.PointEntity
+import ru.family.tracker.data.db.SosEventEntity
 import ru.family.tracker.data.db.TrackerDatabase
 
 /** Worker contract: role/token gate, success cleanup and retry propagation. */
@@ -156,8 +157,23 @@ class LocationBufferWorkerTest {
     }
 
     @Test
-    fun `schedulePeriodic enqueues the documented unique work`() {
+    fun `a successful location run also drains a queued sos`() {
         installContainer(api(HttpStatusCode.NoContent))
+        runBlocking {
+            queuePoint()
+            database.sos().insert(SosEventEntity(lat = 1.0, lon = 2.0, createdAtMillis = 100))
+        }
+
+        val result = runWorker()
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertEquals(2, networkCalls)
+        assertEquals(0, runBlocking { database.points().count() })
+        assertEquals(0, runBlocking { database.sos().count() })
+    }
+
+    @Test
+    fun `schedulePeriodic enqueues the documented unique work`() {        installContainer(api(HttpStatusCode.NoContent))
 
         LocationBufferWorker.schedulePeriodic(app)
 

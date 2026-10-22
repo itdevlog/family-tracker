@@ -14,6 +14,10 @@ interface PointDao {
     @Query("SELECT * FROM points ORDER BY recorded_at ASC LIMIT :limit")
     suspend fun pendingPoints(limit: Int): List<PointEntity>
 
+    /** Most recent fix, used as the coordinates of an SOS press. */
+    @Query("SELECT * FROM points ORDER BY recorded_at DESC LIMIT 1")
+    suspend fun latestPoint(): PointEntity?
+
     @Query("DELETE FROM points WHERE id IN (:ids)")
     suspend fun deleteUploaded(ids: List<Long>)
 

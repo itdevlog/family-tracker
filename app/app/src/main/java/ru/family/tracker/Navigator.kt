@@ -5,7 +5,6 @@ import androidx.compose.runtime.remember
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.ui.child.ChildRoot
 import ru.family.tracker.ui.parent.ParentRoot
 import ru.family.tracker.ui.role.RoleScreen
@@ -27,8 +26,10 @@ private fun Role?.route(): String = when (this) {
  * process recreation land on the same root the user selected.
  */
 @Composable
-fun FamilyTrackerRoot(settings: Settings, api: ApiClient) {
+fun FamilyTrackerRoot(container: AppContainer) {
     val navController = rememberNavController()
+    val settings = container.settings
+    val api = container.api
     val startRoute = remember { settings.role.route() }
 
     NavHost(navController = navController, startDestination = startRoute) {
@@ -43,6 +44,13 @@ fun FamilyTrackerRoot(settings: Settings, api: ApiClient) {
             )
         }
         composable(Routes.PARENT) { ParentRoot(settings = settings, api = api) }
-        composable(Routes.CHILD) { ChildRoot(settings = settings, api = api) }
+        composable(Routes.CHILD) {
+            ChildRoot(
+                settings = settings,
+                api = api,
+                sosSender = container.sosSender,
+                pointDao = container.room.points(),
+            )
+        }
     }
 }

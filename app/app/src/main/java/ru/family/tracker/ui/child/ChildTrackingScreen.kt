@@ -36,14 +36,37 @@ import ru.family.tracker.child.LocationBufferWorker
 import ru.family.tracker.child.TrackingService
 
 /**
- * Minimal tracking control screen for a paired child.
+ * Tracking-only destination retained for callers that do not show the SOS button.
  *
- * Requests the runtime permissions, starts the foreground service and the 15-minute
- * periodic flush, and offers a confirmed stop. The full background-location wizard
- * ("Always" + battery optimization) is Task 8; here only a hint is shown.
+ * The actual permission/start/stop controls live in [TrackingControls], shared with
+ * [ChildHomeScreen] so permission logic exists in exactly one place.
  */
 @Composable
 fun ChildTrackingScreen(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.child_tracking_title),
+            style = MaterialTheme.typography.headlineMedium,
+        )
+        TrackingControls()
+    }
+}
+
+/**
+ * Permission status, permission request, start and a confirmed stop.
+ *
+ * Requests the runtime permissions, starts the foreground service and the 15-minute
+ * periodic flush. The full background-location wizard ("Always" + battery optimization)
+ * is Task 8; here only a hint is shown.
+ */
+@Composable
+fun TrackingControls(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var locationGranted by remember { mutableStateOf(hasLocationPermission(context)) }
     var notificationsGranted by remember { mutableStateOf(hasNotificationPermission(context)) }
@@ -72,17 +95,9 @@ fun ChildTrackingScreen(modifier: Modifier = Modifier) {
     }
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.child_tracking_title),
-            style = MaterialTheme.typography.headlineMedium,
-        )
-
         Text(
             text = stringResource(
                 R.string.child_tracking_status_location,

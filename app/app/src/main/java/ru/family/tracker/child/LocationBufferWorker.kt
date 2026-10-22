@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import ru.family.tracker.FamilyTrackerApp
 import java.util.concurrent.TimeUnit
 
@@ -32,8 +33,22 @@ class LocationBufferWorker(
         if (!container.settings.canTrack()) return Result.success()
 
         val uploader = LocationUploader(container.room.points(), container.api)
-        return when (uploader.flushOnce()) {
-            FlushOutcome.Retry -> Result.retry()
+        val locationOutcome = uploader.flushOnce()
+
+        // A network-constrained location run is also a good moment to drain a queued SOS.
+        // Its failure must not keep the details hidden behind a location retry, but asking
+        // WorkManager to retry is harmless: the point queue is already empty when it succeeds.
+        val sosFlushed = try {
+            container.sosSender.flushSos()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            false
+        }
+
+        return when {
+            locationOutcome == FlushOutcome.Retry -> Result.retry()
+            !sosFlushed -> Result.retry()
             else -> Result.success()
         }
     }
