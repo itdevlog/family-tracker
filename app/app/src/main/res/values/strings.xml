@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Family Tracker</string>
+    <string name="role_title">Кто использует это приложение?</string>
+    <string name="role_parent">Я родитель</string>
+    <string name="role_child">Я ребёнок</string>
+    <string name="parent_root_title">Родитель</string>
+    <string name="child_root_title">Ребёнок</string>
+    <string name="root_coming_soon">Экран появится позже</string>
 </resources>

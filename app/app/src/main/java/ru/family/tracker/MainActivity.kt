@@ -11,10 +11,11 @@ import ru.family.tracker.ui.theme.FamilyTrackerTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val container = (application as FamilyTrackerApp).container
         setContent {
             FamilyTrackerTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    // Placeholder: role-based UI is added in Task 2.
+                    FamilyTrackerRoot(container.settings)
                 }
             }
         }
