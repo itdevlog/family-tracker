@@ -1,9 +1,11 @@
 package ru.family.tracker.child
 
 import android.app.NotificationManager
-import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.testing.WorkManagerTestInitHelper
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -149,6 +151,30 @@ class TrackingServiceTest {
 
         assertEquals(true, fakeSource.lastHighAccuracy)
         assertEquals(INTERVAL_MOVING_MS, fakeSource.lastIntervalMs)
+    }
+
+    @Test
+    fun `stop cancels the periodic flush and any pending one-shot flush`() {
+        WorkManagerTestInitHelper.initializeTestWorkManager(app)
+        LocationBufferWorker.schedulePeriodic(app)
+        LocationBufferWorker.enqueueFlush(app)
+
+        val workManager = WorkManager.getInstance(app)
+        assertEquals(
+            WorkInfo.State.ENQUEUED,
+            workManager.getWorkInfosForUniqueWork(LocationBufferWorker.UNIQUE_PERIODIC).get().single().state,
+        )
+
+        TrackingService.stop(app)
+
+        assertEquals(
+            WorkInfo.State.CANCELLED,
+            workManager.getWorkInfosForUniqueWork(LocationBufferWorker.UNIQUE_PERIODIC).get().single().state,
+        )
+        assertEquals(
+            WorkInfo.State.CANCELLED,
+            workManager.getWorkInfosForUniqueWork(LocationBufferWorker.UNIQUE_FLUSH).get().single().state,
+        )
     }
 
     @Test

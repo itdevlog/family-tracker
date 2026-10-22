@@ -39,9 +39,9 @@ class LocationBufferWorker(
     }
 
     companion object {
-        private const val UNIQUE_FLUSH = "location-flush"
-        private const val UNIQUE_PERIODIC = "location-periodic"
-        private const val PERIOD_MINUTES = 15L
+        internal const val UNIQUE_FLUSH = "location-flush"
+        internal const val UNIQUE_PERIODIC = "location-periodic"
+        internal const val PERIOD_MINUTES = 15L
 
         fun enqueueFlush(context: Context) {
             val request = OneTimeWorkRequestBuilder<LocationBufferWorker>()
@@ -66,6 +66,14 @@ class LocationBufferWorker(
                 ExistingPeriodicWorkPolicy.KEEP,
                 request,
             )
+        }
+
+        /** Stops both the in-flight flush and the periodic safety net. */
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context.applicationContext).apply {
+                cancelUniqueWork(UNIQUE_PERIODIC)
+                cancelUniqueWork(UNIQUE_FLUSH)
+            }
         }
 
         private fun networkConstraints(): Constraints = Constraints.Builder()

@@ -1,9 +1,10 @@
 package ru.family.tracker.ui.child
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import ru.family.tracker.R
@@ -48,10 +48,12 @@ fun ChildTrackingScreen(modifier: Modifier = Modifier) {
     var locationGranted by remember { mutableStateOf(hasLocationPermission(context)) }
     var notificationsGranted by remember { mutableStateOf(hasNotificationPermission(context)) }
     var showStopConfirmation by remember { mutableStateOf(false) }
+    var showPermissionHelp by remember { mutableStateOf(false) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         locationGranted = hasLocationPermission(context)
         notificationsGranted = hasNotificationPermission(context)
+        if (locationGranted) showPermissionHelp = false
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -59,7 +61,14 @@ fun ChildTrackingScreen(modifier: Modifier = Modifier) {
     ) {
         locationGranted = hasLocationPermission(context)
         notificationsGranted = hasNotificationPermission(context)
-        if (locationGranted) startTracking(context)
+        if (locationGranted) {
+            showPermissionHelp = false
+            startTracking(context)
+        } else {
+            // Covers "don't ask again" and a permanently denied permission: without this
+            // the Start button would look like a silent no-op.
+            showPermissionHelp = true
+        }
     }
 
     Column(
@@ -93,6 +102,17 @@ fun ChildTrackingScreen(modifier: Modifier = Modifier) {
             text = stringResource(R.string.child_tracking_background_hint),
             style = MaterialTheme.typography.bodySmall,
         )
+
+        if (showPermissionHelp && !locationGranted) {
+            Text(
+                text = stringResource(R.string.child_tracking_permission_blocked),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            TextButton(onClick = { openAppSettings(context) }) {
+                Text(stringResource(R.string.child_tracking_open_settings))
+            }
+        }
 
         Button(
             onClick = {
@@ -145,27 +165,13 @@ private fun startTracking(context: Context) {
     LocationBufferWorker.schedulePeriodic(context)
 }
 
-private fun missingPermissions(context: Context): List<String> = buildList {
-    if (!hasLocationPermission(context)) {
-        add(Manifest.permission.ACCESS_FINE_LOCATION)
-    }
-    if (!hasNotificationPermission(context)) {
-        add(Manifest.permission.POST_NOTIFICATIONS)
-    }
+private fun openAppSettings(context: Context) {
+    val intent = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", context.packageName, null),
+    )
+    context.startActivity(intent)
 }
-
-private fun hasLocationPermission(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_FINE_LOCATION,
-    ) == PackageManager.PERMISSION_GRANTED
-
-private fun hasNotificationPermission(context: Context): Boolean =
-    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) == PackageManager.PERMISSION_GRANTED
 
 @Composable
 private fun permissionLabel(granted: Boolean): String = stringResource(

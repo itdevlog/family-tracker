@@ -151,6 +151,9 @@ class TrackingService : Service() {
         }
 
         fun stop(context: Context) {
+            // Stopping tracking must also stop the queued backlog from being uploaded
+            // every 15 minutes behind the user's back.
+            LocationBufferWorker.cancel(context)
             context.stopService(Intent(context, TrackingService::class.java))
         }
     }

@@ -24,7 +24,7 @@ import java.net.URI
 import java.net.URISyntaxException
 
 /** Upper bound accepted by `POST /locations`; rejected locally to spare the round trip. */
-private const val MAX_POINTS_PER_BATCH = 100
+internal const val MAX_POINTS_PER_BATCH = 100
 
 /** A non-2xx server answer, including the server's `error` field when it parses. */
 class ApiException(val status: Int, val serverError: String?) :

@@ -82,6 +82,8 @@
     <string name="child_tracking_permission_denied">не разрешена</string>
     <string name="child_tracking_permission_not_required">не требуется</string>
     <string name="child_tracking_background_hint">Для работы в фоне разрешите геолокацию «Всегда».</string>
+    <string name="child_tracking_permission_blocked">Без доступа к геолокации отслеживание не включится. Если запрос больше не появляется, разрешите «Местоположение» в настройках приложения.</string>
+    <string name="child_tracking_open_settings">Открыть настройки</string>
     <string name="child_tracking_start">Разрешить и включить отслеживание</string>
     <string name="child_tracking_stop">Остановить</string>
     <string name="child_tracking_stop_confirm_title">Остановить отслеживание?</string>

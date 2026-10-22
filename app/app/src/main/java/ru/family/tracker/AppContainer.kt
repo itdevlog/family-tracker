@@ -18,6 +18,7 @@ class AppContainer(
     private val context: Context,
     settingsOverride: Settings? = null,
     databaseFactory: ((Context) -> TrackerDatabase)? = null,
+    private val apiOverride: ApiClient? = null,
 ) {
     val settings: Settings = settingsOverride ?: Settings.create(context)
 
@@ -31,6 +32,6 @@ class AppContainer(
     var flushScheduler: (Context) -> Unit = { LocationBufferWorker.enqueueFlush(it) }
 
     val api: ApiClient by lazy {
-        ApiClient({ settings.baseUrl }, { settings.token })
+        apiOverride ?: ApiClient({ settings.baseUrl }, { settings.token })
     }
 }

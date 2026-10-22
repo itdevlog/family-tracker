@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ApiException
+import ru.family.tracker.data.api.MAX_POINTS_PER_BATCH
 import ru.family.tracker.data.db.PointDao
 import ru.family.tracker.data.db.toPointIn
 
@@ -30,7 +31,7 @@ sealed interface FlushOutcome {
 class LocationUploader(
     private val dao: PointDao,
     private val api: ApiClient,
-    private val batchSize: Int = MAX_BATCH_SIZE,
+    private val batchSize: Int = MAX_POINTS_PER_BATCH,
 ) {
 
     suspend fun flushOnce(): FlushOutcome {
@@ -59,8 +60,6 @@ class LocationUploader(
     }
 
     companion object {
-        const val MAX_BATCH_SIZE = 100
-
         /** Statuses that describe the payload itself, not a temporary condition. */
         private val DROP_STATUSES = setOf(400, 403, 413, 422)
 
