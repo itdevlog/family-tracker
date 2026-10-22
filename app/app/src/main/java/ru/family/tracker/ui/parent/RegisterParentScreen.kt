@@ -1,6 +1,5 @@
 package ru.family.tracker.ui.parent
 
-import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -21,88 +20,32 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
-import ru.family.tracker.NtfyConfig
 import ru.family.tracker.R
-import ru.family.tracker.Settings
-import ru.family.tracker.data.api.ApiClient
-import ru.family.tracker.data.api.ApiException
-import ru.family.tracker.data.api.normalizeBaseUrl
 
 /**
- * First-run parent screen: collects the self-hosted server address and the parent's name,
- * creates the family on the server and stores the returned token and ntfy credentials.
- *
- * The base URL must be saved before the call because [ApiClient] resolves it on every
- * request; validation reuses the same normalization the client applies, so a URL that
- * passes here cannot fail inside the client.
+ * First-run parent form. Rendering only: validation, persistence and the network call
+ * live in [RegisterParentViewModel], which survives rotation with the request in flight.
  */
 @Composable
 fun RegisterParentScreen(
-    settings: Settings,
-    api: ApiClient,
-    onRegistered: () -> Unit,
+    initialServerUrl: String,
+    state: RegisterState,
+    onSubmit: (serverUrl: String, name: String) -> Unit,
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    var serverUrl by rememberSaveable { mutableStateOf(settings.baseUrl.orEmpty()) }
+    var serverUrl by rememberSaveable { mutableStateOf(initialServerUrl) }
     var name by rememberSaveable { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
 
-    fun submit() {
-        if (busy) return
-
-        val normalized = runCatching { normalizeBaseUrl(serverUrl) }.getOrNull()
-        if (normalized == null) {
-            error = context.getString(R.string.parent_register_error_invalid_url)
-            return
-        }
-        val trimmedName = name.trim()
-        if (trimmedName.isEmpty()) {
-            error = context.getString(R.string.parent_register_error_empty_name)
-            return
-        }
-
-        error = null
-        busy = true
-        scope.launch {
-            try {
-                settings.baseUrl = normalized
-                val registration = api.registerParent(trimmedName)
-                settings.token = registration.token
-                settings.ntfyConfig = NtfyConfig(
-                    url = registration.ntfy.url,
-                    topic = registration.ntfy.topic,
-                    token = registration.ntfy.token,
-                )
-                settings.baseUrl = normalized
-                onRegistered()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (apiError: ApiException) {
-                error = registrationErrorMessage(context, apiError.status)
-            } catch (_: Exception) {
-                error = context.getString(R.string.parent_register_error_network)
-            } finally {
-                busy = false
-            }
-        }
-    }
+    val busy = state is RegisterState.Loading
+    val errorMessageRes = (state as? RegisterState.Error)?.messageRes
 
     Column(
         modifier = Modifier
@@ -153,10 +96,10 @@ fun RegisterParentScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (error != null) {
+        if (errorMessageRes != null) {
             Spacer(Modifier.height(16.dp))
             Text(
-                text = error.orEmpty(),
+                text = stringResource(errorMessageRes),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
@@ -165,7 +108,7 @@ fun RegisterParentScreen(
 
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = ::submit,
+            onClick = { onSubmit(serverUrl, name) },
             enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
@@ -185,15 +128,4 @@ fun RegisterParentScreen(
             }
         }
     }
-}
-
-/** Maps an HTTP failure to a short, actionable message; never exposes stack traces. */
-private fun registrationErrorMessage(context: Context, status: Int): String = when {
-    status == 409 -> context.getString(R.string.parent_register_error_conflict)
-    status == 401 -> context.getString(R.string.parent_register_error_unauthorized)
-    status == 403 -> context.getString(R.string.parent_register_error_forbidden)
-    status == 422 -> context.getString(R.string.parent_register_error_unprocessable)
-    status == 429 -> context.getString(R.string.parent_register_error_rate_limited)
-    status in 500..599 -> context.getString(R.string.parent_register_error_server, status)
-    else -> context.getString(R.string.parent_register_error_http, status)
 }

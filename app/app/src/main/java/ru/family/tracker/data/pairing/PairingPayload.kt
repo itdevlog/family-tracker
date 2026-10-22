@@ -1,4 +1,4 @@
-package ru.family.tracker.ui.parent
+package ru.family.tracker.data.pairing
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -13,7 +13,7 @@ import kotlinx.serialization.json.Json
  * class defines field order in the JSON: `server`, then `code`.
  */
 @Serializable
-private data class PairingPayload(val server: String, val code: String)
+data class PairingPayload(val server: String, val code: String)
 
 private val pairingJson = Json
 

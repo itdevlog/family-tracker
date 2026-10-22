@@ -1,4 +1,4 @@
-package ru.family.tracker.ui.parent
+package ru.family.tracker.data.pairing
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -6,7 +6,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class QrPayloadTest {
+class PairingPayloadTest {
 
     @Test
     fun `payload is ordered json without spaces`() {

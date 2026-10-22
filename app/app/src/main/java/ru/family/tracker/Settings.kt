@@ -73,9 +73,12 @@ class Settings(private val store: KeyValueStore) {
                 override fun getString(key: String): String? = prefs.getString(key, null)
 
                 override fun putString(key: String, value: String?) {
+                    // commit(), not apply(): a successful registration response carries a
+                    // token that cannot be re-obtained (a retry answers 409), so writes of
+                    // these set-once values must reach disk before the caller proceeds.
                     prefs.edit().apply {
                         if (value == null) remove(key) else putString(key, value)
-                    }.apply()
+                    }.commit()
                 }
             })
         }
