@@ -74,4 +74,23 @@
     <string name="child_scan_manual">Ввести вручную</string>
     <string name="child_scan_cancel">Отмена</string>
     <string name="child_pair_success_placeholder">Телефон привязан. Трекинг появится в следующей задаче</string>
+
+    <string name="child_tracking_title">Отслеживание</string>
+    <string name="child_tracking_status_location">Геолокация: %1$s</string>
+    <string name="child_tracking_status_notifications">Уведомления: %1$s</string>
+    <string name="child_tracking_permission_granted">разрешена</string>
+    <string name="child_tracking_permission_denied">не разрешена</string>
+    <string name="child_tracking_permission_not_required">не требуется</string>
+    <string name="child_tracking_background_hint">Для работы в фоне разрешите геолокацию «Всегда».</string>
+    <string name="child_tracking_start">Разрешить и включить отслеживание</string>
+    <string name="child_tracking_stop">Остановить</string>
+    <string name="child_tracking_stop_confirm_title">Остановить отслеживание?</string>
+    <string name="child_tracking_stop_confirm_text">Точки перестанут отправляться на сервер, пока вы снова не включите отслеживание.</string>
+    <string name="child_tracking_stop_confirm_yes">Остановить</string>
+    <string name="child_tracking_stop_confirm_no">Отмена</string>
+
+    <string name="tracking_channel_name">Отслеживание местоположения</string>
+    <string name="tracking_channel_description">Постоянное уведомление о работе отслеживания</string>
+    <string name="tracking_notification_title">Отслеживание включено</string>
+    <string name="tracking_notification_text">Точки отправляются на сервер</string>
 </resources>

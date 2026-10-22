@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -77,6 +78,15 @@ dependencies {
 
     implementation("com.google.zxing:core:3.5.3")
 
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+
     val cameraX = "1.4.1"
     implementation("androidx.camera:camera-core:$cameraX")
     implementation("androidx.camera:camera-camera2:$cameraX")
@@ -89,6 +99,8 @@ dependencies {
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("io.ktor:ktor-client-mock:3.0.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("androidx.work:work-testing:2.9.1")
+    testImplementation("androidx.room:room-testing:2.6.1")
     testImplementation(kotlin("test"))
 
     debugImplementation("androidx.compose.ui:ui-tooling")
