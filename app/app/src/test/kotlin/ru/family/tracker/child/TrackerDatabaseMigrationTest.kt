@@ -9,7 +9,6 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -30,15 +29,15 @@ abstract class V1Database : RoomDatabase() {
 }
 
 /**
- * Real 1→2 migration check. `exportSchema = false`, so instead of `MigrationTestHelper`
- * this test opens a genuine v1 Room database with [TrackerDatabase.MIGRATION_1_2] and
- * verifies that the old point survives and the new table works.
+ * Real 1→2 migration check through the production builder. `exportSchema = false`, so
+ * instead of `MigrationTestHelper` this test opens a genuine v1 Room database with
+ * `TrackerDatabase.build()` and verifies that the old point survives and the new table works.
  */
 @RunWith(RobolectricTestRunner::class)
 class TrackerDatabaseMigrationTest {
 
     private lateinit var context: Context
-    private val databaseName = "migration-test.db"
+    private val databaseName = TrackerDatabase.NAME
 
     @Before
     fun setUp() {
@@ -86,14 +85,10 @@ class TrackerDatabaseMigrationTest {
         ).use { it.version }
         assertEquals(1, rawVersion)
 
-        val room = Room.databaseBuilder(context, TrackerDatabase::class.java, databaseName)
-            .addMigrations(TrackerDatabase.MIGRATION_1_2)
-            .allowMainThreadQueries()
-            .build()
+        val room = TrackerDatabase.build(context)
         try {
-            val point = runBlocking { room.points().latestPoint() }
-            assertNotNull(point)
-            assertEquals(55.75, point!!.lat, 0.0)
+            val point = runBlocking { room.points().pendingPoints(1).single() }
+            assertEquals(55.75, point.lat, 0.0)
             assertEquals(37.61, point.lon, 0.0)
             assertEquals(1234L, point.recordedAtMillis)
             assertEquals(1, runBlocking { room.points().count() })

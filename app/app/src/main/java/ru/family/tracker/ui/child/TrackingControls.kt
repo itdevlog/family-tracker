@@ -9,11 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -36,34 +32,12 @@ import ru.family.tracker.child.LocationBufferWorker
 import ru.family.tracker.child.TrackingService
 
 /**
- * Tracking-only destination retained for callers that do not show the SOS button.
- *
- * The actual permission/start/stop controls live in [TrackingControls], shared with
- * [ChildHomeScreen] so permission logic exists in exactly one place.
- */
-@Composable
-fun ChildTrackingScreen(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.child_tracking_title),
-            style = MaterialTheme.typography.headlineMedium,
-        )
-        TrackingControls()
-    }
-}
-
-/**
  * Permission status, permission request, start and a confirmed stop.
  *
  * Requests the runtime permissions, starts the foreground service and the 15-minute
  * periodic flush. The full background-location wizard ("Always" + battery optimization)
- * is Task 8; here only a hint is shown.
+ * is Task 8; here only a hint is shown. Shared with the child home so permission logic
+ * exists in exactly one place.
  */
 @Composable
 fun TrackingControls(modifier: Modifier = Modifier) {

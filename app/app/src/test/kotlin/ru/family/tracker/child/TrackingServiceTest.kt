@@ -132,6 +132,12 @@ class TrackingServiceTest {
         assertEquals(0.2f, stored.speed)
         assertEquals(1_700_000_000_000L, stored.recordedAtMillis)
 
+        await { settings.lastPoint != null }
+        val lastPoint = settings.lastPoint!!
+        assertEquals(55.75, lastPoint.lat, 0.0)
+        assertEquals(37.61, lastPoint.lon, 0.0)
+        assertEquals(1_700_000_000_000L, lastPoint.recordedAtMillis)
+
         assertEquals(INTERVAL_IDLE_MS, fakeSource.lastIntervalMs)
         assertEquals(false, fakeSource.lastHighAccuracy)
 

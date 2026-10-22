@@ -43,67 +43,91 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.family.tracker.R
+import ru.family.tracker.Settings
 import ru.family.tracker.child.SosFlushWorker
 import ru.family.tracker.child.SosSender
-import ru.family.tracker.data.db.PointDao
 
-private enum class SosStatus { IDLE, SENDING, SENT, PENDING }
+internal enum class SosStatus { IDLE, SENDING, SENT, PENDING }
+
+/**
+ * Saved results survive recreation; SENDING does not.
+ *
+ * A legacy or crashed screen may still have "SENDING" in the saved bundle. Restoring it
+ * would leave the button disabled forever, so anything but a real result maps to IDLE.
+ */
+internal fun restoredSosStatus(savedName: String?): SosStatus = when (savedName) {
+    SosStatus.SENT.name -> SosStatus.SENT
+    SosStatus.PENDING.name -> SosStatus.PENDING
+    else -> SosStatus.IDLE
+}
 
 /**
  * Paired child's home: a hold-to-confirm SOS plus the tracking controls.
  *
  * A press is always written to Room first (inside [SosSender]); when the send fails the
  * event stays queued and [SosFlushWorker] is scheduled for the next network window.
- * A missing location fix must not block the alert, so the documented `0.0, 0.0` is sent
- * and the screen says so.
+ * Coordinates come from [Settings.lastPoint], not the upload outbox, because uploaded
+ * points are deleted. A missing fix must not block the alert, so the documented
+ * `0.0, 0.0` is sent and the screen says that the coordinates are unknown.
  */
 @Composable
 fun ChildHomeScreen(
     sosSender: SosSender,
-    pointDao: PointDao,
+    settings: Settings,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var statusName by rememberSaveable { mutableStateOf(SosStatus.IDLE.name) }
-    val status = SosStatus.entries.firstOrNull { it.name == statusName } ?: SosStatus.IDLE
+    var resultName by rememberSaveable { mutableStateOf(SosStatus.IDLE.name) }
+    var sending by remember { mutableStateOf(false) }
     var locationMissing by rememberSaveable { mutableStateOf(false) }
 
+    // Never trust a restored SENDING: the coroutine that would finish it no longer exists.
+    LaunchedEffect(Unit) {
+        if (resultName == SosStatus.SENDING.name) resultName = SosStatus.IDLE.name
+    }
+
+    val resultStatus = restoredSosStatus(resultName)
+    val status = if (sending) SosStatus.SENDING else resultStatus
+
     fun sendSos() {
-        if (status == SosStatus.SENDING) return
-        statusName = SosStatus.SENDING.name
+        if (sending) return
+        sending = true
+        // Schedule before the request: if the process dies mid-network, the event already
+        // written to Room still has a worker. KEEP deduplicates this with the failure path.
+        runCatching { SosFlushWorker.enqueue(context) }
+
         scope.launch {
-            val point = try {
-                pointDao.latestPoint()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Exception) {
-                null
-            }
-            locationMissing = point == null
+            try {
+                val point = withContext(Dispatchers.IO) { settings.lastPoint }
+                locationMissing = point == null
 
-            val sent = withContext(Dispatchers.IO) {
-                try {
-                    sosSender.trySend(
-                        lat = point?.lat ?: 0.0,
-                        lon = point?.lon ?: 0.0,
-                    )
-                } catch (cancellation: CancellationException) {
-                    // The press may already be in Room; schedule a worker before letting the
-                    // UI coroutine die (rotation/back), otherwise the event waits for tracking.
-                    runCatching { SosFlushWorker.enqueue(context) }
-                    throw cancellation
-                } catch (_: Exception) {
-                    false
+                val sent = withContext(Dispatchers.IO) {
+                    try {
+                        sosSender.trySend(
+                            lat = point?.lat ?: 0.0,
+                            lon = point?.lon ?: 0.0,
+                        )
+                    } catch (cancellation: CancellationException) {
+                        // The press may already be in Room; schedule a worker before letting the
+                        // UI coroutine die (rotation/back), otherwise the event waits for tracking.
+                        runCatching { SosFlushWorker.enqueue(context) }
+                        throw cancellation
+                    } catch (_: Exception) {
+                        false
+                    }
                 }
-            }
 
-            statusName = if (sent) SosStatus.SENT.name else SosStatus.PENDING.name
-            if (!sent) {
-                runCatching { SosFlushWorker.enqueue(context) }
+                resultName = if (sent) SosStatus.SENT.name else SosStatus.PENDING.name
+                if (!sent) {
+                    runCatching { SosFlushWorker.enqueue(context) }
+                }
+            } finally {
+                sending = false
             }
         }
     }
@@ -124,7 +148,7 @@ fun ChildHomeScreen(
 
         LongPressSosButton(
             onTriggered = ::sendSos,
-            enabled = status != SosStatus.SENDING,
+            enabled = !sending,
         )
 
         Text(
@@ -179,9 +203,11 @@ fun ChildHomeScreen(
 /**
  * Circular SOS pad that fires after exactly [HOLD_MS] of continuous pressure.
  *
- * The ring tracks how long the finger has been down; releasing earlier cancels the press.
- * A haptic pulse marks the moment the alert is accepted, and the callback fires once per
- * gesture even if the sending state later re-enables the button.
+ * The hold is measured by [delay] (monotonic) rather than by the animation clock, so
+ * "Remove animations" cannot fire the alert instantly; the ring is decoration only.
+ * Releasing earlier cancels the press. A haptic pulse marks the moment the alert is
+ * accepted, and the callback fires once per gesture even if the sending state later
+ * re-enables the button.
  */
 @Composable
 fun LongPressSosButton(
@@ -205,10 +231,16 @@ fun LongPressSosButton(
         if (!enabled || fired) return@LaunchedEffect
 
         progress.snapTo(0f)
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = HOLD_MS, easing = LinearEasing),
-        )
+        val ring = launch {
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = HOLD_MS, easing = LinearEasing),
+            )
+        }
+        delay(HOLD_MS.toLong())
+        ring.cancel()
+        progress.snapTo(1f)
+
         fired = true
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         latestOnTriggered()

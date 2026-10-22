@@ -1,5 +1,6 @@
 package ru.family.tracker.data.api
 
+import kotlinx.serialization.Serializable
 import java.time.DateTimeException
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -10,6 +11,7 @@ import java.time.OffsetDateTime
  * The wire format carries ISO-8601 strings; inside the app time is a single epoch
  * millisecond value so Room and the upload queue never handle timestamp strings.
  */
+@Serializable
 data class PointIn(
     val lat: Double,
     val lon: Double,

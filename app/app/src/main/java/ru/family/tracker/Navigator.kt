@@ -49,7 +49,6 @@ fun FamilyTrackerRoot(container: AppContainer) {
                 settings = settings,
                 api = api,
                 sosSender = container.sosSender,
-                pointDao = container.room.points(),
             )
         }
     }

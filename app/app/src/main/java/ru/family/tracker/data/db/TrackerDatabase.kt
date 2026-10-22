@@ -26,7 +26,7 @@ abstract class TrackerDatabase : RoomDatabase() {
     abstract fun sos(): SosDao
 
     companion object {
-        private const val NAME = "tracker.db"
+        internal const val NAME = "tracker.db"
 
         /** Additive migration: existing points are left untouched. */
         internal val MIGRATION_1_2: Migration = object : Migration(1, 2) {

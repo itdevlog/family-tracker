@@ -90,6 +90,9 @@ class TrackingService : Service() {
     private fun onLocation(point: PointIn) {
         scope.launch {
             container.room.points().insert(point.toEntity())
+            // Keep the last fix outside the outbox: uploads delete points, but SOS still
+            // needs the most recent coordinates while tracking is online.
+            container.settings.setLastPoint(point.lat, point.lon, point.recordedAtMillis)
             try {
                 container.flushScheduler(this@TrackingService)
             } catch (error: Exception) {

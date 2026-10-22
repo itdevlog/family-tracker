@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import ru.family.tracker.data.api.PointIn
 
 enum class Role { PARENT, CHILD }
 
@@ -47,12 +48,33 @@ class Settings(private val store: KeyValueStore) {
         get() = store.getString(KEY_WIZARD_DONE) == "true"
         set(value) = store.putString(KEY_WIZARD_DONE, value.toString())
 
+    /**
+     * Last fix seen by tracking, kept outside the upload outbox.
+     *
+     * The `points` table is drained/emptied by uploads, so it cannot answer "where is the
+     * child right now" — the SOS button needs this value even while online.
+     */
+    var lastPoint: PointIn?
+        get() = store.getString(KEY_LAST_POINT)?.let { stored ->
+            runCatching { json.decodeFromString<PointIn>(stored) }.getOrNull()
+        }
+        set(value) = store.putString(KEY_LAST_POINT, value?.let { json.encodeToString(it) })
+
+    fun setLastPoint(lat: Double, lon: Double, timeMillis: Long) {
+        lastPoint = PointIn(lat = lat, lon = lon, recordedAtMillis = timeMillis)
+    }
+
+    fun clearLastPoint() {
+        lastPoint = null
+    }
+
     companion object {
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_ROLE = "role"
         private const val KEY_TOKEN = "token"
         private const val KEY_NTFY = "ntfy_config"
         private const val KEY_WIZARD_DONE = "wizard_done"
+        private const val KEY_LAST_POINT = "last_point"
 
         private val json = Json { ignoreUnknownKeys = true }
 

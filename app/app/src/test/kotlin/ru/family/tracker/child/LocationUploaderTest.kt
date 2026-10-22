@@ -32,9 +32,6 @@ class LocationUploaderTest {
         override suspend fun pendingPoints(limit: Int): List<PointEntity> =
             rows.sortedBy { it.recordedAtMillis }.take(limit)
 
-        override suspend fun latestPoint(): PointEntity? =
-            rows.maxByOrNull { it.recordedAtMillis }
-
         override suspend fun deleteUploaded(ids: List<Long>) {
             rows.removeAll { it.id in ids }
         }

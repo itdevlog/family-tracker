@@ -10,6 +10,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.headersOf
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -158,8 +160,30 @@ class SosSenderTest {
     }
 
     @Test
-    fun `flush is bounded to one batch and the next run continues`() = runTest {
-        repeat(SosSender.MAX_BATCH + 1) { index ->
+    fun `concurrent flushes send each event exactly once`() = runTest {
+        dao.insert(SosEventEntity(lat = 1.0, lon = 2.0, createdAtMillis = 100))
+        var calls = 0
+        val engine = MockEngine {
+            calls++
+            delay(100)
+            respond("", HttpStatusCode.NoContent)
+        }
+        val sender = SosSender(
+            dao,
+            ApiClient({ "https://server.example" }, { "child-token" }, engine),
+        )
+
+        val first = async { sender.flushSos() }
+        val second = async { sender.flushSos() }
+
+        assertTrue(first.await())
+        assertTrue(second.await())
+        assertEquals(1, calls)
+        assertEquals(0, dao.count())
+    }
+
+    @Test
+    fun `flush is bounded to one batch and the next run continues`() = runTest {        repeat(SosSender.MAX_BATCH + 1) { index ->
             dao.insert(SosEventEntity(lat = index.toDouble(), lon = 0.0, createdAtMillis = index.toLong()))
         }
         var calls = 0

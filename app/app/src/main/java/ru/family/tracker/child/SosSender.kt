@@ -2,6 +2,8 @@ package ru.family.tracker.child
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ApiException
 import ru.family.tracker.data.db.SosDao
@@ -24,6 +26,13 @@ class SosSender(
     private val api: ApiClient,
 ) {
 
+    /**
+     * Serializes drains: the UI, [SosFlushWorker] and [LocationBufferWorker] may all try
+     * to flush at once, and without this lock both could read the same pending row and
+     * send a duplicate SOS.
+     */
+    private val flushMutex = Mutex()
+
     /** Queues the press and immediately attempts to drain the outbox. */
     suspend fun trySend(lat: Double, lon: Double): Boolean {
         dao.insert(
@@ -42,7 +51,11 @@ class SosSender(
      * Returns true only when the outbox is empty afterwards, i.e. every queued event was
      * either accepted or permanently dropped as invalid.
      */
-    suspend fun flushSos(): Boolean {
+    suspend fun flushSos(): Boolean = flushMutex.withLock {
+        drainLocked()
+    }
+
+    private suspend fun drainLocked(): Boolean {
         val pending = dao.pending(MAX_BATCH)
         if (pending.isEmpty()) return true
 

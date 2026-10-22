@@ -70,6 +70,29 @@ class SettingsTest {
     }
 
     @Test
+    fun `last known point round-trips and clears`() {
+        val settings = Settings(store)
+        assertNull(settings.lastPoint)
+
+        settings.setLastPoint(lat = 55.75, lon = 37.61, timeMillis = 1_700_000_000_000)
+
+        val reloaded = Settings(store).lastPoint
+        assertEquals(55.75, reloaded?.lat ?: 0.0, 0.0)
+        assertEquals(37.61, reloaded?.lon ?: 0.0, 0.0)
+        assertEquals(1_700_000_000_000L, reloaded?.recordedAtMillis)
+
+        settings.clearLastPoint()
+        assertNull(Settings(store).lastPoint)
+    }
+
+    @Test
+    fun `corrupt last point is treated as absent`() {
+        store.putString("last_point", "{not json")
+
+        assertNull(Settings(store).lastPoint)
+    }
+
+    @Test
     fun `wizardDone round-trip`() {
         val settings = Settings(store)
         assertFalse(settings.wizardDone)

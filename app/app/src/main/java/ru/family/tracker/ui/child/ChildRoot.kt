@@ -8,7 +8,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.family.tracker.Settings
 import ru.family.tracker.child.SosSender
 import ru.family.tracker.data.api.ApiClient
-import ru.family.tracker.data.db.PointDao
 
 /**
  * Child destination: pairing while no token is stored, then the paired home with the
@@ -22,7 +21,6 @@ fun ChildRoot(
     settings: Settings,
     api: ApiClient,
     sosSender: SosSender,
-    pointDao: PointDao,
 ) {
     val factory = remember(settings, api) { childPairViewModelFactory(settings, api) }
     val pairViewModel: ChildPairViewModel = viewModel(factory = factory)
@@ -36,6 +34,6 @@ fun ChildRoot(
             onSubmit = pairViewModel::submit,
         )
     } else {
-        ChildHomeScreen(sosSender = sosSender, pointDao = pointDao)
+        ChildHomeScreen(sosSender = sosSender, settings = settings)
     }
 }
