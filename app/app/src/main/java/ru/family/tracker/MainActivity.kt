@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             FamilyTrackerTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    FamilyTrackerRoot(container.settings)
+                    FamilyTrackerRoot(container.settings, container.api)
                 }
             }
         }

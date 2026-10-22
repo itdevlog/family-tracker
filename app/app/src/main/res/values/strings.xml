@@ -6,4 +6,36 @@
     <string name="parent_root_title">Родитель</string>
     <string name="child_root_title">Ребёнок</string>
     <string name="root_coming_soon">Экран появится позже</string>
+
+    <string name="parent_register_title">Регистрация семьи</string>
+    <string name="parent_register_hint">Укажите адрес вашего сервера Family Tracker и своё имя. Семья на сервере создаётся один раз.</string>
+    <string name="parent_register_server_label">Адрес сервера</string>
+    <string name="parent_register_server_support">Полный адрес со схемой, без пути: https://api.example.net</string>
+    <string name="parent_register_name_label">Ваше имя</string>
+    <string name="parent_register_submit">Создать семью</string>
+    <string name="parent_register_error_invalid_url">Адрес сервера должен быть полным, вида https://api.example.net (без пути, query и fragment).</string>
+    <string name="parent_register_error_empty_name">Введите имя.</string>
+    <string name="parent_register_error_conflict">На сервере уже создана семья. Войти без токена нельзя — обратитесь к тому, кто её создал.</string>
+    <string name="parent_register_error_unauthorized">Сервер отклонил регистрацию (401). Проверьте адрес сервера.</string>
+    <string name="parent_register_error_forbidden">Сервер запретил регистрацию (403). Проверьте адрес сервера.</string>
+    <string name="parent_register_error_unprocessable">Сервер не принял данные (422). Проверьте имя и адрес сервера.</string>
+    <string name="parent_register_error_rate_limited">Слишком много попыток. Подождите минуту и повторите.</string>
+    <string name="parent_register_error_server">Ошибка на сервере (%1$d). Попробуйте позже.</string>
+    <string name="parent_register_error_http">Сервер вернул ошибку %1$d.</string>
+    <string name="parent_register_error_network">Не удалось связаться с сервером. Проверьте адрес и подключение к интернету.</string>
+
+    <string name="pair_qr_title">Код для привязки ребёнка</string>
+    <string name="pair_qr_hint">Покажите этот QR-код ребёнку или продиктуйте цифры. Код действует ограниченное время.</string>
+    <string name="pair_qr_qr_description">QR-код для привязки ребёнка</string>
+    <string name="pair_qr_expires">Действует до: %1$s</string>
+    <string name="pair_qr_refresh">Обновить код</string>
+    <string name="pair_qr_retry">Повторить</string>
+    <string name="pair_qr_done">Готово</string>
+    <string name="pair_qr_error_network">Не удалось получить код. Проверьте подключение к интернету.</string>
+    <string name="pair_qr_error_unauthorized">Сервер не принял токен родителя. Возможно, семья на сервере была сброшена.</string>
+    <string name="pair_qr_error_http">Сервер не выдал код (ошибка %1$d).</string>
+    <string name="pair_qr_error_encode">Не удалось построить QR-код. Продиктуйте цифры вручную.</string>
+
+    <string name="parent_home_coming_soon">Карта появится в следующей задаче</string>
+    <string name="parent_home_show_qr">Показать QR для привязки ребёнка</string>
 </resources>
