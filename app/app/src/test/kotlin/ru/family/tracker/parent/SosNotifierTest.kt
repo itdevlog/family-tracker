@@ -3,6 +3,7 @@ package ru.family.tracker.parent
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -65,6 +66,12 @@ class SosNotifierTest {
         val alert = SosAlert.fromIntent(shadowOf(notification.contentIntent).savedIntent)
         assertEquals(event.eventId, alert?.eventId)
         assertEquals(event.child, alert?.childId)
+
+        // A second alert while MainActivity is already open must arrive via onNewIntent,
+        // not recreate the activity on top of the stack.
+        val launchFlags = shadowOf(notification.contentIntent).savedIntent.flags
+        assertTrue(launchFlags and Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
+        assertTrue(launchFlags and Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
     }
 
     @Test
@@ -73,7 +80,7 @@ class SosNotifierTest {
 
         val notification = shadowOf(manager).getNotification(event.eventId.hashCode())
         assertEquals(
-            context.getString(ru.family.tracker.R.string.sos_notification_title, "ребёнок"),
+            context.getString(ru.family.tracker.R.string.sos_notification_title, "ребёнка"),
             notification.extras.getString(Notification.EXTRA_TITLE),
         )
     }

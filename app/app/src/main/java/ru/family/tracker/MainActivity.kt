@@ -1,7 +1,9 @@
 package ru.family.tracker
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +16,7 @@ import ru.family.tracker.ui.theme.FamilyTrackerTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        showOnLockScreen()
         showSosAlert(intent)
 
         val container = (application as FamilyTrackerApp).container
@@ -30,6 +33,23 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         showSosAlert(intent)
+    }
+
+    /**
+     * A full-screen intent can arrive while the phone is locked. API 27+ has dedicated
+     * activity APIs; API 26 (the app minimum) still supports the equivalent window flags.
+     */
+    private fun showOnLockScreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+            )
+        }
     }
 
     /**

@@ -21,6 +21,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -36,9 +37,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.family.tracker.R
 import ru.family.tracker.data.api.ApiClient
-import java.text.SimpleDateFormat
-import java.time.OffsetDateTime
-import java.util.Date
 import java.util.Locale
 
 /**
@@ -59,6 +57,10 @@ fun SosHistoryScreen(
     val backDescription = stringResource(R.string.sos_history_back)
 
     BackHandler(onBack = onBack)
+
+    // The ViewModel survives leaving the screen; on every entry refresh the feed without
+    // discarding the list it already holds. The initial load is skipped while it runs.
+    LaunchedEffect(viewModel) { viewModel.refresh() }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -242,13 +244,4 @@ private fun SosBanner(
             }
         }
     }
-}
-
-private fun formatSosTime(iso: String): String {
-    val millis = try {
-        OffsetDateTime.parse(iso).toInstant().toEpochMilli()
-    } catch (_: Exception) {
-        return iso
-    }
-    return SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(millis))
 }

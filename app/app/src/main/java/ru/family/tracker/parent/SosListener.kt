@@ -33,7 +33,7 @@ class SosListener(
     private val sink: (SosEvent) -> Unit,
     private val settings: Settings,
     private val scope: CoroutineScope,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val notificationsEnabled: () -> Boolean = { true },
     private val backoffMs: List<Long> = DEFAULT_BACKOFF_MS,
 ) {
     private var job: Job? = null
@@ -79,6 +79,12 @@ class SosListener(
      * from the same persisted marker.
      */
     private suspend fun handleMessage() {
+        // With notifications disabled there is nothing we can show. Keep the marker
+        // untouched so the next ntfy message after the user enables them re-fetches
+        // every event that was missed (including this one). There is no timer here, so
+        // this cannot become a tight loop.
+        if (!notificationsEnabled()) return
+
         val marker = parseInstant(settings.lastSosNotifiedAt)
         val events = try {
             api.sosList(sinceIso = marker?.toString())

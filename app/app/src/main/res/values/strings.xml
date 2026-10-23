@@ -66,7 +66,7 @@
     <string name="sos_channel_description">Экстренные сигналы от детей</string>
     <string name="sos_notification_title">SOS от %1$s</string>
     <string name="sos_notification_text">Нажмите, чтобы открыть карту</string>
-    <string name="sos_notification_child_fallback">ребёнок</string>
+    <string name="sos_notification_child_fallback">ребёнка</string>
 
     <string name="sos_listener_channel_name">Family Tracker активен</string>
     <string name="sos_listener_channel_description">Приложение следит за сигналами SOS</string>
@@ -83,6 +83,13 @@
     <string name="sos_alert_ack_error">Не удалось подтвердить получение. Проверьте подключение и повторите.</string>
     <string name="sos_alert_retry">Повторить</string>
     <string name="sos_alert_map_description">Карта места тревоги</string>
+
+    <string name="sos_full_screen_allow">Разрешить полноэкранные уведомления</string>
+    <string name="sos_notifications_off_title">Уведомления выключены — SOS не будет слышно</string>
+    <string name="sos_notifications_off_text">Разрешите уведомления, иначе сигнал тревоги не покажется на экране.</string>
+    <string name="sos_notifications_open_settings">Открыть настройки</string>
+    <string name="sos_full_screen_off_title">Полноэкранные уведомления запрещены</string>
+    <string name="sos_full_screen_off_text">Разрешите полноэкранные уведомления, чтобы сигнал SOS открывался сразу. Иначе останется только обычное уведомление.</string>
 
     <string name="sos_history_title">Тревоги</string>
     <string name="sos_history_back">Назад</string>

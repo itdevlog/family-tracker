@@ -138,12 +138,6 @@ class SosHistoryViewModel(
         ack(eventId)
     }
 
-    fun clearAckError() {
-        if (_state.value.ackFailed) {
-            _state.update { it.copy(ackFailed = false, ackFailedId = null) }
-        }
-    }
-
     private fun createdMillis(iso: String): Long = try {
         OffsetDateTime.parse(iso).toInstant().toEpochMilli()
     } catch (_: DateTimeException) {

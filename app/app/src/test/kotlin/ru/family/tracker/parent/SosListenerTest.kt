@@ -2,20 +2,24 @@ package ru.family.tracker.parent
 
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.request.HttpRequestData
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.family.tracker.KeyValueStore
 import ru.family.tracker.Settings
@@ -50,11 +54,16 @@ class SosListenerTest {
         fun push() {
             channel.trySend(Unit)
         }
+
+        fun close() {
+            channel.close()
+        }
     }
 
     private val settings = Settings(InMemoryStore())
     private val sinkEvents = CopyOnWriteArrayList<ru.family.tracker.data.api.SosEvent>()
     private val sosRequests = AtomicInteger(0)
+    private val requests = CopyOnWriteArrayList<HttpRequestData>()
 
     @Volatile
     private var failNextRequests = 0
@@ -62,6 +71,7 @@ class SosListenerTest {
     private val engine = MockEngine { request ->
         when (request.url.encodedPath) {
             "/sos" -> {
+                requests += request
                 sosRequests.incrementAndGet()
                 if (failNextRequests > 0) {
                     failNextRequests--
@@ -85,12 +95,17 @@ class SosListenerTest {
 
     private val api = ApiClient({ "https://server.example" }, { "test-token" }, engine)
 
-    private fun listener(scope: kotlinx.coroutines.CoroutineScope, socket: FakeSocket) = SosListener(
+    private fun listener(
+        scope: kotlinx.coroutines.CoroutineScope,
+        socket: FakeSocket,
+        notificationsEnabled: () -> Boolean = { true },
+    ) = SosListener(
         api = api,
         socketFactory = { socket },
         sink = { sinkEvents += it },
         settings = settings,
         scope = scope,
+        notificationsEnabled = notificationsEnabled,
     )
 
     @Test
@@ -102,12 +117,13 @@ class SosListenerTest {
             runCurrent()
 
             socket.push()
-            settleUntil("first sos") { sinkEvents.size == 1 }
+            settleUntil("first sos") { settings.lastSosNotifiedAt == "2026-10-20T10:10:00Z" }
 
             assertEquals(1, sinkEvents.size)
             assertEquals("new", sinkEvents.single().eventId)
             assertEquals("2026-10-20T10:10:00Z", settings.lastSosNotifiedAt)
             assertEquals(1, sosRequests.get())
+            assertNull(requests.single().url.parameters["since"])
 
             // The same ntfy message (and a reconnect replay) must not notify twice.
             socket.push()
@@ -117,6 +133,10 @@ class SosListenerTest {
             assertEquals(1, sinkEvents.size)
             assertEquals(2, sosRequests.get())
             assertEquals("2026-10-20T10:10:00Z", settings.lastSosNotifiedAt)
+            assertEquals(
+                "2026-10-20T10:10:00Z",
+                requests.last().url.parameters["since"],
+            )
 
             listener.stop()
         }
@@ -137,13 +157,102 @@ class SosListenerTest {
             assertNull(settings.lastSosNotifiedAt)
 
             socket.push()
-            settleUntil("retried sos request") { sinkEvents.size == 1 }
+            settleUntil("retried sos request") {
+                settings.lastSosNotifiedAt == "2026-10-20T10:10:00Z"
+            }
 
             assertEquals(1, sinkEvents.size)
             assertEquals("new", sinkEvents.single().eventId)
             assertEquals("2026-10-20T10:10:00Z", settings.lastSosNotifiedAt)
 
             listener.stop()
+        }
+
+    @Test
+    fun `disabled notifications do not advance the marker and enable later processing`() =
+        runTest(UnconfinedTestDispatcher()) {
+            var enabled = false
+            val socket = FakeSocket()
+            val listener = listener(this, socket, notificationsEnabled = { enabled })
+            listener.start()
+            runCurrent()
+
+            socket.push()
+            runCurrent()
+
+            assertEquals(0, sinkEvents.size)
+            assertNull(settings.lastSosNotifiedAt)
+            assertEquals(0, sosRequests.get())
+
+            enabled = true
+            socket.push()
+            settleUntil("sos after notifications enabled") {
+                settings.lastSosNotifiedAt == "2026-10-20T10:10:00Z"
+            }
+
+            assertEquals(1, sinkEvents.size)
+            assertEquals("new", sinkEvents.single().eventId)
+            assertEquals("2026-10-20T10:10:00Z", settings.lastSosNotifiedAt)
+
+            listener.stop()
+        }
+
+    @Test
+    fun `closed socket reconnects after the backoff`() = runTest(UnconfinedTestDispatcher()) {
+        val sockets = mutableListOf<FakeSocket>()
+        val listener = SosListener(
+            api = api,
+            socketFactory = { FakeSocket().also { sockets += it } },
+            sink = { sinkEvents += it },
+            settings = settings,
+            scope = this,
+        )
+
+        listener.start()
+        runCurrent()
+        assertEquals(1, sockets.size)
+
+        sockets[0].close()
+        runCurrent()
+        assertEquals(1, sockets.size)
+
+        advanceTimeBy(1_999)
+        runCurrent()
+        assertEquals(1, sockets.size)
+
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(2, sockets.size)
+
+        listener.stop()
+    }
+
+    @Test
+    fun `cancellation from the socket is rethrown instead of reconnecting`() =
+        runTest(UnconfinedTestDispatcher()) {
+            var created = 0
+            val listener = SosListener(
+                api = api,
+                socketFactory = {
+                    created++
+                    object : NtfySocket {
+                        override fun messages(): Flow<Unit> = flow {
+                            throw CancellationException("test cancellation")
+                        }
+                    }
+                },
+                sink = { sinkEvents += it },
+                settings = settings,
+                scope = this,
+            )
+
+            listener.start()
+            runCurrent()
+            advanceTimeBy(60_000)
+            runCurrent()
+
+            assertEquals(1, created)
+            assertTrue(sinkEvents.isEmpty())
         }
 
     @Test

@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -68,6 +70,22 @@ fun SosAlertScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // A second SOS while the screen is already visible replaces the alert in place.
+    // Keying the whole content by event id resets the ack state and creates a new MapView
+    // centered on the new coordinates instead of keeping the previous alert's map.
+    key(alert.eventId) {
+        SosAlertContent(alert = alert, api = api, onClose = onClose, modifier = modifier)
+    }
+}
+
+@Composable
+private fun SosAlertContent(
+    alert: SosAlert,
+    api: ApiClient,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
     var childName by remember(alert.childId) { mutableStateOf<String?>(null) }
     var acking by remember { mutableStateOf(false) }
     var ackFailed by remember { mutableStateOf(false) }
@@ -92,6 +110,9 @@ fun SosAlertScreen(
             scope.launch {
                 try {
                     api.ackSos(alert.eventId)
+                    // The acknowledged event no longer needs to occupy the shade.
+                    NotificationManagerCompat.from(context)
+                        .cancel(alert.eventId.hashCode())
                     onClose()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -128,7 +149,7 @@ fun SosAlertScreen(
             textAlign = TextAlign.Center,
         )
         Text(
-            text = stringResource(R.string.sos_alert_time, formatTime(alert.createdAtIso)),
+            text = stringResource(R.string.sos_alert_time, formatSosTime(alert.createdAtIso)),
             color = Color.White,
             fontSize = 16.sp,
         )
@@ -245,7 +266,7 @@ private fun SosMiniMap(lat: Double, lon: Double, modifier: Modifier = Modifier) 
     }
 }
 
-private fun formatTime(iso: String): String {
+internal fun formatSosTime(iso: String): String {
     val millis = try {
         OffsetDateTime.parse(iso).toInstant().toEpochMilli()
     } catch (_: Exception) {
