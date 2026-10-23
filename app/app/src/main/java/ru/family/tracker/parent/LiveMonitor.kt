@@ -5,11 +5,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.PointIn
 import ru.family.tracker.data.api.ws.LiveEvent
@@ -29,10 +30,15 @@ data class ChildMarker(
     val recordedAtMillis: Long,
 )
 
+/** Whether the initial `/devices` request has succeeded. */
+enum class SeedState { LOADING, READY, ERROR }
+
 data class LiveMapState(
     val markers: List<ChildMarker> = emptyList(),
     val connected: Boolean = false,
     val error: String? = null,
+    val childrenCount: Int = 0,
+    val seedState: SeedState = SeedState.LOADING,
 )
 
 /**
@@ -42,6 +48,10 @@ data class LiveMapState(
  * The socket itself is deliberately dumb (one connection, ends on close); all
  * reconnect/backoff logic lives here because each reconnect must be preceded by a
  * catch-up request, otherwise points produced during the outage would be lost.
+ *
+ * Catch-up intentionally runs **after** the backoff delay: points that reach the server
+ * while we are waiting are then included in the next history request. Running it before
+ * the delay would query too early and lose them until the following reconnect.
  */
 class LiveMonitor(
     private val api: ApiClient,
@@ -58,33 +68,50 @@ class LiveMonitor(
     private val seenPoints = HashSet<PointKey>()
     private val markers = HashMap<String, ChildMarker>()
 
+    @Volatile
+    private var seeded = false
+
     private var job: Job? = null
 
+    @Synchronized
     fun start() {
         if (job?.isActive == true) return
-        update { it.copy(error = null) }
+        _state.update {
+            it.copy(
+                error = null,
+                seedState = if (seeded) SeedState.READY else SeedState.LOADING,
+            )
+        }
         job = scope.launch { run() }
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null
-        update { it.copy(connected = false) }
+        _state.update { it.copy(connected = false, error = null) }
     }
 
     private suspend fun run() {
-        seedFromDevices()
-        catchUp()
-
         var attempt = 0
         while (currentCoroutineContext().isActive) {
+            if (!seeded) {
+                seedFromDevices()
+            }
+            catchUp()
+
             var unauthorized = false
             try {
                 socketFactory().events().collect { event ->
                     when (event) {
                         LiveEvent.Open -> {
                             attempt = 0
-                            update { it.copy(connected = true, error = null) }
+                            _state.update { it.copy(connected = true, error = null) }
+                            // A failed seed is retried on every connection attempt, so a
+                            // transient /devices error cannot leave UUID names for long.
+                            if (!seeded && seedFromDevices()) {
+                                catchUp()
+                            }
                         }
 
                         is LiveEvent.Location -> {
@@ -98,7 +125,7 @@ class LiveMonitor(
                                     recordedAtMillis = event.recordedAtMillis,
                                 ),
                             )
-                            update { it.copy(connected = true) }
+                            _state.update { it.copy(connected = true) }
                         }
 
                         // SOS alerts are Task 11; the map itself has nothing to show yet.
@@ -115,41 +142,52 @@ class LiveMonitor(
 
             if (!currentCoroutineContext().isActive) break
 
-            update { it.copy(connected = false) }
+            _state.update { it.copy(connected = false) }
 
             if (unauthorized) {
                 // 4401/401 means the token is dead. Retrying would only hammer the server.
-                update { it.copy(error = ERROR_UNAUTHORIZED) }
+                _state.update { it.copy(error = ERROR_UNAUTHORIZED) }
                 break
             }
 
             attempt++
-            catchUp()
             delay(backoffFor(attempt))
         }
     }
 
-    private suspend fun seedFromDevices() {
-        try {
-            api.devices().forEach { device ->
-                children[device.deviceId] = device.name
-                val last = device.lastLocation ?: return@forEach
-                val millis = isoMillis(last.recordedAt) ?: return@forEach
-                apply(
-                    device.deviceId,
-                    PointIn(
-                        lat = last.lat,
-                        lon = last.lon,
-                        recordedAtMillis = millis,
-                    ),
-                )
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            // The map still works without the seed; history and WS will fill it in.
-            log.warning("live seed failed: ${error.javaClass.simpleName}")
+    /** Returns true when `/devices` answered, so names and the child list are authoritative. */
+    private suspend fun seedFromDevices(): Boolean = try {
+        api.devices().forEach { device ->
+            children[device.deviceId] = device.name
+            val last = device.lastLocation ?: return@forEach
+            val millis = isoMillis(last.recordedAt) ?: return@forEach
+            apply(
+                device.deviceId,
+                PointIn(
+                    lat = last.lat,
+                    lon = last.lon,
+                    recordedAtMillis = millis,
+                ),
+            )
         }
+        seeded = true
+        _state.update {
+            it.copy(seedState = SeedState.READY, childrenCount = children.size)
+        }
+        refreshMarkerNames()
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        // The map still works without the seed; WS/history may fill it in, and the
+        // reconnect loop retries this request until it succeeds.
+        log.warning("live seed failed: ${error.javaClass.simpleName}")
+        if (!seeded) {
+            _state.update {
+                it.copy(seedState = SeedState.ERROR, childrenCount = children.size)
+            }
+        }
+        false
     }
 
     /**
@@ -182,7 +220,12 @@ class LiveMonitor(
     private fun apply(childId: String, point: PointIn) {
         if (!seenPoints.add(PointKey(childId, point.recordedAtMillis))) return
 
+        val wasKnown = children.containsKey(childId)
         children.getOrPut(childId) { childId }
+        if (!wasKnown) {
+            _state.update { it.copy(childrenCount = children.size) }
+        }
+
         val stamp = point.recordedAtMillis
         val previousSeen = lastSeen[childId]
         if (previousSeen == null || stamp > previousSeen) {
@@ -202,13 +245,23 @@ class LiveMonitor(
         }
     }
 
-    private fun publishMarkers() {
-        val ordered = markers.values.sortedWith(compareBy({ it.name }, { it.childId }))
-        update { it.copy(markers = ordered) }
+    /** A child discovered only through WS still shows its UUID until `/devices` succeeds. */
+    private fun refreshMarkerNames() {
+        var changed = false
+        for (childId in markers.keys.toList()) {
+            val marker = markers[childId] ?: continue
+            val realName = children[childId] ?: continue
+            if (marker.name != realName) {
+                markers[childId] = marker.copy(name = realName)
+                changed = true
+            }
+        }
+        if (changed) publishMarkers()
     }
 
-    private fun update(transform: (LiveMapState) -> LiveMapState) {
-        _state.value = transform(_state.value)
+    private fun publishMarkers() {
+        val ordered = markers.values.sortedWith(compareBy({ it.name }, { it.childId }))
+        _state.update { it.copy(markers = ordered) }
     }
 
     private fun backoffFor(attempt: Int): Long {

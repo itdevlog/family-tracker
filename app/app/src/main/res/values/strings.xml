@@ -42,7 +42,10 @@
     <string name="parent_map_status_reconnecting">Переподключение…</string>
     <string name="parent_map_status_unauthorized">Нет доступа к серверу</string>
     <string name="parent_map_children_count">Детей: %1$d</string>
+    <string name="parent_map_children_loading">Загрузка списка детей…</string>
+    <string name="parent_map_children_error">Не удалось загрузить список детей</string>
     <string name="parent_map_empty">Нет привязанных детей</string>
+    <string name="parent_map_waiting_location">Ожидание местоположения…</string>
     <string name="parent_map_qr">QR</string>
 
     <string name="child_pair_title">Привязать телефон ребёнка</string>

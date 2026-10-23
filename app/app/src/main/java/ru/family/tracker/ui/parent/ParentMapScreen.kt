@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
 import ru.family.tracker.R
 import ru.family.tracker.Settings
@@ -43,6 +44,7 @@ import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ws.KtorLiveSocket
 import ru.family.tracker.parent.ChildMarker
 import ru.family.tracker.parent.LiveMonitor
+import ru.family.tracker.parent.SeedState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -123,13 +125,26 @@ fun ParentMapScreen(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
-                    Text(
-                        text = stringResource(
-                            R.string.parent_map_children_count,
-                            state.markers.size,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    when (state.seedState) {
+                        SeedState.LOADING -> Text(
+                            text = stringResource(R.string.parent_map_children_loading),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+
+                        SeedState.ERROR -> Text(
+                            text = stringResource(R.string.parent_map_children_error),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+
+                        SeedState.READY -> Text(
+                            text = stringResource(
+                                R.string.parent_map_children_count,
+                                state.childrenCount,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
 
@@ -143,7 +158,13 @@ fun ParentMapScreen(
             }
         }
 
-        if (state.markers.isEmpty()) {
+        val placeholder = when {
+            state.seedState != SeedState.READY -> null
+            state.childrenCount == 0 -> R.string.parent_map_empty
+            state.markers.isEmpty() -> R.string.parent_map_waiting_location
+            else -> null
+        }
+        if (placeholder != null) {
             Surface(
                 modifier = Modifier.align(Alignment.Center),
                 shape = RoundedCornerShape(12.dp),
@@ -151,7 +172,7 @@ fun ParentMapScreen(
                 tonalElevation = 2.dp,
             ) {
                 Text(
-                    text = stringResource(R.string.parent_map_empty),
+                    text = stringResource(placeholder),
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodyLarge,
                 )
@@ -178,6 +199,8 @@ private fun ParentMap(
             setMultiTouchControls(true)
             controller.setZoom(DEFAULT_ZOOM)
             controller.setCenter(MOSCOW)
+            // Tile licence requires visible attribution ("© OpenStreetMap contributors").
+            overlays.add(CopyrightOverlay(context))
         }
     }
 

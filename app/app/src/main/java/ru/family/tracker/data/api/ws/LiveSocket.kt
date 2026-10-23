@@ -3,6 +3,8 @@ package ru.family.tracker.data.api.ws
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.http.encodeURLParameter
@@ -18,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.DateTimeException
 import java.time.OffsetDateTime
+import java.util.concurrent.TimeUnit
 
 /** Application-private close code the server uses for a bad or non-parent token. */
 internal const val WS_UNAUTHORIZED: Short = 4401
@@ -74,7 +77,25 @@ class KtorLiveSocket(
         val url = liveUrl(baseUrlProvider(), token)
 
         val client = HttpClient(OkHttp) {
-            install(WebSockets)
+            install(WebSockets) {
+                // Plugin-level ping; the OkHttp engine ignores it and uses its own
+                // pingInterval below, but this keeps the intent visible for other engines.
+                pingIntervalMillis = PING_INTERVAL_MS
+            }
+            install(HttpTimeout) {
+                connectTimeoutMillis = CONNECT_TIMEOUT_MS
+                requestTimeoutMillis = REQUEST_TIMEOUT_MS
+                // An idle live socket is normal; liveness is covered by WebSocket pings.
+                socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            }
+            engine {
+                config {
+                    // Ktor skips HttpTimeout for WebSocket upgrades, so the handshake
+                    // timeout and keepalive are enforced by the OkHttp engine itself.
+                    connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    pingInterval(PING_INTERVAL_SECONDS, TimeUnit.SECONDS)
+                }
+            }
         }
         try {
             val session = try {
@@ -103,6 +124,11 @@ class KtorLiveSocket(
 }
 
 private const val HTTP_UNAUTHORIZED_CLOSE: Short = 401
+private const val PING_INTERVAL_SECONDS = 30L
+private const val PING_INTERVAL_MS = 30_000L
+private const val CONNECT_TIMEOUT_SECONDS = 15L
+private const val CONNECT_TIMEOUT_MS = 15_000L
+private const val REQUEST_TIMEOUT_MS = 20_000L
 
 /**
  * Builds `wss://host/live?token=...` from the configured base URL.

@@ -8,11 +8,10 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -34,6 +33,8 @@ import ru.family.tracker.data.api.ws.LiveUnauthorizedException
 import ru.family.tracker.data.api.ws.liveUrl
 import ru.family.tracker.data.api.ws.parseLiveEvent
 import java.time.Instant
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The live map must never lose the points that arrive while the WebSocket is down.
@@ -44,13 +45,30 @@ import java.time.Instant
 class LiveMonitorTest {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val requests = mutableListOf<HttpRequestData>()
+    private val requests = CopyOnWriteArrayList<HttpRequestData>()
+    private val deviceFailuresRemaining = AtomicInteger(0)
+
+    @Volatile
     private var historyResponder: (HttpRequestData) -> List<PointIn> = { emptyList() }
 
     private val engine = MockEngine { request ->
         requests += request
         when (request.url.encodedPath) {
-            "/devices" -> respondJson(DEVICES_ONE_CHILD)
+            "/devices" -> {
+                if (deviceFailuresRemaining.getAndDecrement() > 0) {
+                    respond(
+                        content = """{"error":"boom"}""",
+                        status = HttpStatusCode.InternalServerError,
+                        headers = headersOf(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.Json.toString(),
+                        ),
+                    )
+                } else {
+                    respondJson(DEVICES_ONE_CHILD)
+                }
+            }
+
             "/locations" -> respondJson(
                 json.encodeToString(
                     historyResponder(request).map { it.toWire() },
@@ -67,174 +85,287 @@ class LiveMonitorTest {
 
     private val api = ApiClient({ BASE_URL }, { TOKEN }, engine)
 
-    private fun MockRequestHandleScope.respondJson(body: String) = respond(
+    private fun MockRequestHandleScope.respondJson(
+        body: String,
+        status: HttpStatusCode = HttpStatusCode.OK,
+    ) = respond(
         content = body,
-        status = HttpStatusCode.OK,
+        status = status,
         headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
     )
 
     @Test
-    fun `ws death triggers history catch-up and updates the marker`() = runTest(UnconfinedTestDispatcher()) {
-        var historyCalls = 0
-        historyResponder = {
-            historyCalls++
-            if (historyCalls == 1) {
-                emptyList()
-            } else {
-                listOf(point(55.72, 37.62, "2026-10-20T10:06:00Z"))
-            }
-        }
-
-        val sockets = FakeSocketFactory()
-        val monitor = LiveMonitor(
-            api = api,
-            socketFactory = sockets::newSocket,
-            scope = this,
-            clock = { NOW },
-        )
-
-        monitor.start()
-        settleUntil("first socket and seed") {
-            sockets.sockets.size == 1 && monitor.state.value.connected
-        }
-        assertTrue(monitor.state.value.connected)
-
-        sockets.current.send(location(55.71, 37.61, "2026-10-20T10:05:00Z"))
-        settleUntil("websocket point") {
-            monitor.state.value.markers.single().lat == 55.71
-        }
-
-        sockets.current.close()
-        settleUntil("history catch-up after ws death") {
-            historyCalls >= 2 && monitor.state.value.markers.single().lat == 55.72
-        }
-
-        val history = requests.last { it.url.encodedPath == "/locations" }
-        assertEquals("child-1", history.url.parameters["device"])
-        assertEquals("2026-10-20T10:05:00Z", history.url.parameters["from"])
-        assertEquals("2026-10-20T10:10:00Z", history.url.parameters["to"])
-
-        val marker = monitor.state.value.markers.single()
-        assertEquals("Маша", marker.name)
-        assertEquals(55.72, marker.lat, 0.0)
-        assertEquals(
-            Instant.parse("2026-10-20T10:06:00Z").toEpochMilli(),
-            marker.recordedAtMillis,
-        )
-        assertFalse(monitor.state.value.connected)
-
-        monitor.stop()
-    }
-
-    @Test
-    fun `reconnect does not duplicate caught-up points and the newest point wins`() = runTest(UnconfinedTestDispatcher()) {
-        historyResponder = { request ->
-            when (request.url.parameters["from"]) {
-                "2026-10-20T10:00:00Z" -> listOf(point(55.71, 37.61, "2026-10-20T10:05:00Z"))
-                "2026-10-20T10:05:00Z" -> listOf(point(55.72, 37.62, "2026-10-20T10:06:00Z"))
-                else -> emptyList()
-            }
-        }
-
-        val sockets = FakeSocketFactory()
-        val monitor = LiveMonitor(
-            api = api,
-            socketFactory = sockets::newSocket,
-            scope = this,
-            clock = { NOW },
-        )
-
-        monitor.start()
-        settleUntil("seed and initial history") {
-            sockets.sockets.size == 1 && monitor.state.value.markers.single().lat == 55.71
-        }
-        val first = sockets.current
-
-        first.close()
-        settleUntil("catch-up on close") {
-            monitor.state.value.markers.single().recordedAtMillis ==
-                Instant.parse("2026-10-20T10:06:00Z").toEpochMilli()
-        }
-        advanceTimeBy(2_000)
-        runCurrent()
-        settleUntil("reconnect") { sockets.sockets.size == 2 }
-
-        sockets.current.send(location(99.0, 99.0, "2026-10-20T10:06:00Z"))
-        sockets.current.send(location(55.73, 37.63, "2026-10-20T10:07:00Z"))
-        sockets.current.send(location(99.0, 99.0, "2026-10-20T10:07:00Z"))
-        settleUntil("newest websocket point") {
-            monitor.state.value.markers.single().recordedAtMillis ==
-                Instant.parse("2026-10-20T10:07:00Z").toEpochMilli()
-        }
-
-        val marker = monitor.state.value.markers.single()
-        assertEquals(55.73, marker.lat, 0.0)
-        assertEquals(
-            Instant.parse("2026-10-20T10:07:00Z").toEpochMilli(),
-            marker.recordedAtMillis,
-        )
-
-        monitor.stop()
-    }
-
-    @Test
-    fun `stop cancels reconnects and issues no more requests`() = runTest(UnconfinedTestDispatcher()) {
-        val sockets = FakeSocketFactory()
-        val monitor = LiveMonitor(
-            api = api,
-            socketFactory = sockets::newSocket,
-            scope = this,
-            clock = { NOW },
-        )
-
-        monitor.start()
-        settleUntil("first socket") { sockets.sockets.size == 1 }
-        sockets.current.close()
-        settleUntil("catch-up on close") {
-            requests.count { it.url.encodedPath == "/locations" } >= 2
-        }
-
-        val requestsAtStop = requests.size
-        monitor.stop()
-        advanceTimeBy(5 * 60_000)
-        runCurrent()
-
-        assertEquals(requestsAtStop, requests.size)
-        assertEquals(1, sockets.sockets.size)
-        assertFalse(monitor.state.value.connected)
-    }
-
-    @Test
-    fun `unauthorized socket sets the error and stops reconnecting`() = runTest(UnconfinedTestDispatcher()) {
-        var socketsCreated = 0
-        val monitor = LiveMonitor(
-            api = api,
-            socketFactory = {
-                socketsCreated++
-                object : LiveSocket {
-                    override fun events(): Flow<LiveEvent> = flow {
-                        throw LiveUnauthorizedException()
-                    }
+    fun `ws death triggers history catch-up after backoff and updates the marker`() =
+        runTest(UnconfinedTestDispatcher()) {
+            var historyCalls = 0
+            historyResponder = {
+                historyCalls++
+                if (historyCalls == 1) {
+                    emptyList()
+                } else {
+                    listOf(point(55.72, 37.62, "2026-10-20T10:06:00Z"))
                 }
-            },
-            scope = this,
-            clock = { NOW },
-        )
+            }
 
-        monitor.start()
-        settleUntil("unauthorized state") {
-            monitor.state.value.error == LiveMonitor.ERROR_UNAUTHORIZED
+            val sockets = FakeSocketFactory()
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = sockets::newSocket,
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("first socket and seed") {
+                sockets.sockets.size == 1 && monitor.state.value.connected
+            }
+            assertTrue(monitor.state.value.connected)
+
+            sockets.current.send(location(55.71, 37.61, "2026-10-20T10:05:00Z"))
+            settleUntil("websocket point") {
+                monitor.state.value.markers.single().lat == 55.71
+            }
+
+            sockets.current.close()
+            runCurrent()
+            assertFalse(monitor.state.value.connected)
+
+            advanceTimeBy(2_000)
+            runCurrent()
+            settleUntil("history catch-up after backoff") {
+                historyCalls >= 2 && monitor.state.value.markers.single().lat == 55.72
+            }
+
+            val history = requests.last { it.url.encodedPath == "/locations" }
+            assertEquals("child-1", history.url.parameters["device"])
+            assertEquals("2026-10-20T10:05:00Z", history.url.parameters["from"])
+            assertEquals("2026-10-20T10:10:00Z", history.url.parameters["to"])
+
+            val marker = monitor.state.value.markers.single()
+            assertEquals("Маша", marker.name)
+            assertEquals(55.72, marker.lat, 0.0)
+            assertEquals(
+                Instant.parse("2026-10-20T10:06:00Z").toEpochMilli(),
+                marker.recordedAtMillis,
+            )
+
+            monitor.stop()
         }
-        val requestsAtError = requests.size
 
-        advanceTimeBy(60_000)
-        runCurrent()
+    @Test
+    fun `reconnect does not duplicate caught-up points and the newest point wins`() =
+        runTest(UnconfinedTestDispatcher()) {
+            historyResponder = { request ->
+                when (request.url.parameters["from"]) {
+                    "2026-10-20T10:00:00Z" -> listOf(point(55.71, 37.61, "2026-10-20T10:05:00Z"))
+                    "2026-10-20T10:05:00Z" -> listOf(point(55.72, 37.62, "2026-10-20T10:06:00Z"))
+                    else -> emptyList()
+                }
+            }
 
-        assertEquals(1, socketsCreated)
-        assertEquals(requestsAtError, requests.size)
-        assertFalse(monitor.state.value.connected)
-        monitor.stop()
-    }
+            val sockets = FakeSocketFactory()
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = sockets::newSocket,
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("seed and initial history") {
+                sockets.sockets.size == 1 && monitor.state.value.markers.single().lat == 55.71
+            }
+            val first = sockets.current
+
+            first.close()
+            advanceTimeBy(2_000)
+            runCurrent()
+            settleUntil("catch-up on close") {
+                monitor.state.value.markers.single().recordedAtMillis ==
+                    Instant.parse("2026-10-20T10:06:00Z").toEpochMilli()
+            }
+            settleUntil("reconnect") { sockets.sockets.size == 2 }
+
+            sockets.current.send(location(99.0, 99.0, "2026-10-20T10:06:00Z"))
+            sockets.current.send(location(55.73, 37.63, "2026-10-20T10:07:00Z"))
+            sockets.current.send(location(99.0, 99.0, "2026-10-20T10:07:00Z"))
+            settleUntil("newest websocket point") {
+                monitor.state.value.markers.single().recordedAtMillis ==
+                    Instant.parse("2026-10-20T10:07:00Z").toEpochMilli()
+            }
+
+            val marker = monitor.state.value.markers.single()
+            assertEquals(55.73, marker.lat, 0.0)
+            assertEquals(
+                Instant.parse("2026-10-20T10:07:00Z").toEpochMilli(),
+                marker.recordedAtMillis,
+            )
+
+            monitor.stop()
+        }
+
+    @Test
+    fun `point that appears in history during backoff is not lost`() =
+        runTest(UnconfinedTestDispatcher()) {
+            var missedPointAvailable = false
+            historyResponder = { request ->
+                if (missedPointAvailable && request.url.parameters["from"] == "2026-10-20T10:05:00Z") {
+                    listOf(point(55.72, 37.62, "2026-10-20T10:06:00Z"))
+                } else {
+                    emptyList()
+                }
+            }
+
+            val sockets = FakeSocketFactory()
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = sockets::newSocket,
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("first socket and seed") {
+                sockets.sockets.size == 1 && monitor.state.value.connected
+            }
+            sockets.current.send(location(55.71, 37.61, "2026-10-20T10:05:00Z"))
+            settleUntil("websocket point before the outage") {
+                monitor.state.value.markers.single().lat == 55.71
+            }
+
+            sockets.current.close()
+            runCurrent()
+            // The point reaches the server only while we are waiting to reconnect.
+            missedPointAvailable = true
+
+            advanceTimeBy(2_000)
+            runCurrent()
+            settleUntil("missed point recovered after backoff") {
+                monitor.state.value.markers.single().recordedAtMillis ==
+                    Instant.parse("2026-10-20T10:06:00Z").toEpochMilli()
+            }
+
+            settleUntil("reconnect after catch-up") { sockets.sockets.size == 2 }
+            sockets.current.send(location(55.73, 37.63, "2026-10-20T10:07:00Z"))
+            settleUntil("live point newer than the recovered one") {
+                monitor.state.value.markers.single().recordedAtMillis ==
+                    Instant.parse("2026-10-20T10:07:00Z").toEpochMilli()
+            }
+
+            val marker = monitor.state.value.markers.single()
+            assertEquals(55.73, marker.lat, 0.0)
+            assertEquals(
+                Instant.parse("2026-10-20T10:07:00Z").toEpochMilli(),
+                marker.recordedAtMillis,
+            )
+
+            monitor.stop()
+        }
+
+    @Test
+    fun `stop cancels reconnect and issues no more requests`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val sockets = FakeSocketFactory()
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = sockets::newSocket,
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("first socket") { sockets.sockets.size == 1 }
+            sockets.current.close()
+            runCurrent()
+
+            // The monitor is now in the backoff delay, before catch-up/reconnect.
+            val requestsAtStop = requests.size
+            monitor.stop()
+            advanceTimeBy(5 * 60_000)
+            runCurrent()
+
+            assertEquals(requestsAtStop, requests.size)
+            assertEquals(1, sockets.sockets.size)
+            assertFalse(monitor.state.value.connected)
+            assertNull(monitor.state.value.error)
+        }
+
+    @Test
+    fun `failed seed is retried and replaces a uuid name learned from websocket`() =
+        runTest(UnconfinedTestDispatcher()) {
+            deviceFailuresRemaining.set(2)
+            historyResponder = { emptyList() }
+
+            val sockets = FakeSocketFactory()
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = sockets::newSocket,
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("first socket after failed seed") {
+                sockets.sockets.size == 1
+            }
+            assertEquals(SeedState.ERROR, monitor.state.value.seedState)
+            assertEquals(0, monitor.state.value.childrenCount)
+
+            sockets.current.send(location(55.71, 37.61, "2026-10-20T10:05:00Z"))
+            settleUntil("ws child appears under its id") {
+                monitor.state.value.markers.size == 1 &&
+                    monitor.state.value.markers.single().name == "child-1"
+            }
+            assertEquals(1, monitor.state.value.childrenCount)
+
+            sockets.current.close()
+            advanceTimeBy(2_000)
+            runCurrent()
+            settleUntil("seed retry updates the child name") {
+                monitor.state.value.seedState == SeedState.READY &&
+                    monitor.state.value.childrenCount == 1 &&
+                    monitor.state.value.markers.size == 1 &&
+                    monitor.state.value.markers.single().name == "Маша" &&
+                    sockets.sockets.size == 2
+            }
+
+            monitor.stop()
+        }
+
+    @Test
+    fun `unauthorized socket sets the error and stops reconnecting`() =
+        runTest(UnconfinedTestDispatcher()) {
+            var socketsCreated = 0
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = {
+                    socketsCreated++
+                    object : LiveSocket {
+                        override fun events(): Flow<LiveEvent> = flow {
+                            throw LiveUnauthorizedException()
+                        }
+                    }
+                },
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("unauthorized state") {
+                monitor.state.value.error == LiveMonitor.ERROR_UNAUTHORIZED
+            }
+            val requestsAtError = requests.size
+
+            advanceTimeBy(60_000)
+            runCurrent()
+
+            assertEquals(1, socketsCreated)
+            assertEquals(requestsAtError, requests.size)
+            assertFalse(monitor.state.value.connected)
+
+            monitor.stop()
+            assertNull(monitor.state.value.error)
+        }
 
     @Test
     fun `live url converts the scheme and encodes the token`() {
@@ -331,7 +462,7 @@ class LiveMonitorTest {
 
     /** Creates one fake connection per factory call and remembers them in order. */
     private class FakeSocketFactory {
-        val sockets = mutableListOf<FakeSocket>()
+        val sockets = CopyOnWriteArrayList<FakeSocket>()
 
         fun newSocket(): LiveSocket = FakeSocket().also { sockets += it }
 
