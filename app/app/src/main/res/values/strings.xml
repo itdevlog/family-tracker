@@ -48,6 +48,20 @@
     <string name="parent_map_waiting_location">Ожидание местоположения…</string>
     <string name="parent_map_qr">QR</string>
 
+    <string name="history_title">История</string>
+    <string name="history_back">Назад</string>
+    <string name="history_previous_day">Предыдущий день</string>
+    <string name="history_next_day">Следующий день</string>
+    <string name="history_empty">За этот день нет данных</string>
+    <string name="history_error_access">Нет доступа к истории этого ребёнка или данные не найдены.</string>
+    <string name="history_error_range">Слишком большой диапазон дат. Выберите другой день.</string>
+    <string name="history_error_load">Не удалось загрузить историю. Проверьте подключение и повторите попытку.</string>
+    <string name="history_retry">Повторить</string>
+    <string name="history_start">Старт</string>
+    <string name="history_finish">Финиш</string>
+    <string name="history_stop_title">Остановка</string>
+    <string name="history_stop_snippet">с %1$s до %2$s, %3$d мин</string>
+
     <string name="child_pair_title">Привязать телефон ребёнка</string>
     <string name="child_pair_hint">Отсканируйте QR-код с телефона родителя или введите код из 6 цифр вручную.</string>
     <string name="child_pair_name_label">Имя ребёнка</string>

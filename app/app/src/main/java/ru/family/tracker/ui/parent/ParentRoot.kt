@@ -12,7 +12,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.family.tracker.Settings
 import ru.family.tracker.data.api.ApiClient
 
-private enum class ParentScreen { REGISTER, PAIR_QR, HOME }
+private enum class ParentScreen { REGISTER, PAIR_QR, HOME, HISTORY }
 
 private fun initialScreen(settings: Settings): ParentScreen =
     if (settings.token.isNullOrBlank()) ParentScreen.REGISTER else ParentScreen.HOME
@@ -25,7 +25,15 @@ private fun initialScreen(settings: Settings): ParentScreen =
 @Composable
 fun ParentRoot(settings: Settings, api: ApiClient) {
     var screenName by rememberSaveable { mutableStateOf(initialScreen(settings).name) }
-    val screen = ParentScreen.entries.firstOrNull { it.name == screenName } ?: initialScreen(settings)
+    var historyChildId by rememberSaveable { mutableStateOf<String?>(null) }
+    val storedScreen = ParentScreen.entries.firstOrNull { it.name == screenName }
+        ?: initialScreen(settings)
+    // HISTORY always has a child; a restored bundle without one must not crash.
+    val screen = if (storedScreen == ParentScreen.HISTORY && historyChildId == null) {
+        ParentScreen.HOME
+    } else {
+        storedScreen
+    }
 
     when (screen) {
         ParentScreen.REGISTER -> {
@@ -56,8 +64,21 @@ fun ParentRoot(settings: Settings, api: ApiClient) {
             api = api,
             settings = settings,
             onShowQr = { screenName = ParentScreen.PAIR_QR.name },
-            // Task 10 wires marker taps to the route history screen.
-            onChildClick = {},
+            onChildClick = { childId ->
+                historyChildId = childId
+                screenName = ParentScreen.HISTORY.name
+            },
         )
+
+        ParentScreen.HISTORY -> {
+            val childId = historyChildId
+            if (childId != null) {
+                HistoryScreen(
+                    api = api,
+                    deviceId = childId,
+                    onBack = { screenName = ParentScreen.HOME.name },
+                )
+            }
+        }
     }
 }
