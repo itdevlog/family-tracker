@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings as AndroidSettings
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -238,6 +239,7 @@ private fun StepRow(
 @Composable
 private fun stepTitle(kind: StepKind, vendor: Vendor): String = when (kind) {
     StepKind.BACKGROUND_LOCATION -> stringResource(R.string.child_wizard_step_location_title)
+    StepKind.NOTIFICATIONS -> stringResource(R.string.child_wizard_step_notifications_title)
     StepKind.BATTERY_OPTIMIZATION -> stringResource(R.string.child_wizard_step_battery_title)
     StepKind.AUTOSTART -> stringResource(R.string.child_wizard_step_autostart_title, vendorLabel(vendor))
 }
@@ -245,6 +247,7 @@ private fun stepTitle(kind: StepKind, vendor: Vendor): String = when (kind) {
 @Composable
 private fun stepDescription(kind: StepKind, vendor: Vendor): String = when (kind) {
     StepKind.BACKGROUND_LOCATION -> stringResource(R.string.child_wizard_step_location_description)
+    StepKind.NOTIFICATIONS -> stringResource(R.string.child_wizard_step_notifications_description)
     StepKind.BATTERY_OPTIMIZATION -> stringResource(R.string.child_wizard_step_battery_description)
     StepKind.AUTOSTART -> when (vendor) {
         Vendor.XIAOMI -> stringResource(R.string.child_wizard_step_autostart_description_xiaomi)
@@ -267,6 +270,16 @@ private fun vendorLabel(vendor: Vendor): String = when (vendor) {
 /** OEM activities may be absent (custom ROM, newer firmware); app details always exist. */
 private fun openSettings(context: Context, step: VendorStep) {
     val intent = step.openIntent(context) ?: return
+    val fallback = when (step.kind) {
+        StepKind.BATTERY_OPTIMIZATION ->
+            Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+
+        else -> null
+    }
+    launch(context, intent, fallback)
+}
+
+private fun launch(context: Context, intent: Intent, fallback: Intent?) {
     val launchable = if (context is Activity) {
         intent
     } else {
@@ -274,10 +287,20 @@ private fun openSettings(context: Context, step: VendorStep) {
     }
     try {
         context.startActivity(launchable)
-    } catch (_: ActivityNotFoundException) {
+    } catch (error: ActivityNotFoundException) {
+        Log.w(TAG, "No activity for ${intent.action}; trying fallback", error)
+        recover(context, fallback)
+    } catch (error: SecurityException) {
+        Log.w(TAG, "No permission to open ${intent.action}; trying fallback", error)
+        recover(context, fallback)
+    }
+}
+
+private fun recover(context: Context, fallback: Intent?) {
+    if (fallback == null) {
         openAppDetails(context)
-    } catch (_: SecurityException) {
-        openAppDetails(context)
+    } else {
+        launch(context, fallback, null)
     }
 }
 
@@ -286,5 +309,18 @@ private fun openAppDetails(context: Context) {
         AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
         Uri.parse("package:${context.packageName}"),
     )
-    runCatching { context.startActivity(intent) }
+    val launchable = if (context is Activity) {
+        intent
+    } else {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(launchable)
+    } catch (error: ActivityNotFoundException) {
+        Log.w(TAG, "Cannot open app details settings", error)
+    } catch (error: SecurityException) {
+        Log.w(TAG, "Cannot open app details settings without permission", error)
+    }
 }
+
+private const val TAG = "WizardScreen"

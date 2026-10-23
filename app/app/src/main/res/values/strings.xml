@@ -115,6 +115,8 @@
     <string name="child_wizard_mark_pending">○</string>
     <string name="child_wizard_step_location_title">Геолокация «Всегда»</string>
     <string name="child_wizard_step_location_description">В настройках приложения выберите для местоположения «Разрешить всегда». Без этого отслеживание остановится, когда экран погаснет.</string>
+    <string name="child_wizard_step_notifications_title">Уведомления</string>
+    <string name="child_wizard_step_notifications_description">Разрешите уведомления: в постоянном уведомлении видно, что отслеживание работает, и система реже останавливает приложение.</string>
     <string name="child_wizard_step_battery_title">Без ограничений батареи</string>
     <string name="child_wizard_step_battery_description">Разрешите приложению работать без ограничений энергосбережения, чтобы система не останавливала его в фоне.</string>
     <string name="child_wizard_step_autostart_title">Автозапуск (%1$s)</string>

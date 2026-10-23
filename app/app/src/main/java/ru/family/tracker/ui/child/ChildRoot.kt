@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -34,7 +35,7 @@ fun ChildRoot(
     // Local mirror: the wizard must appear immediately after pairing and disappear on
     // "Done" without waiting for an external state holder to recompose us.
     var wizardDone by remember { mutableStateOf(settings.wizardDone) }
-    var wizardOpen by remember { mutableStateOf(false) }
+    var wizardOpen by rememberSaveable { mutableStateOf(false) }
 
     if (!paired) {
         ChildPairScreen(

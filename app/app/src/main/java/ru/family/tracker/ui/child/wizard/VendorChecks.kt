@@ -9,12 +9,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 /** Phone maker whose background restrictions need a dedicated step. */
 enum class Vendor { XIAOMI, SAMSUNG, HUAWEI, OPPO, STOCK }
 
-enum class StepKind { BACKGROUND_LOCATION, BATTERY_OPTIMIZATION, AUTOSTART }
+enum class StepKind { BACKGROUND_LOCATION, NOTIFICATIONS, BATTERY_OPTIMIZATION, AUTOSTART }
 
 /**
  * One wizard row.
@@ -50,11 +51,13 @@ fun decode(manufacturer: String?): Vendor {
 /**
  * Steps the child must pass for tracking to survive the phone's power management.
  *
- * Background location and battery optimization exist on every vendor; autostart is an
- * OEM-only setting with no public API, so it is only added for the four known families.
+ * Background location, notifications and battery optimization exist on every vendor;
+ * autostart is an OEM-only setting with no public API, so it is only added for the four
+ * known families.
  */
 fun requiredSteps(manufacturer: String?): List<VendorStep> = buildList {
     add(backgroundLocationStep())
+    add(notificationsStep())
     add(batteryOptimizationStep())
     autostartComponent(decode(manufacturer))?.let { component ->
         add(
@@ -73,13 +76,19 @@ private fun backgroundLocationStep(): VendorStep = VendorStep(
     autoCheckable = true,
     check = { context ->
         // Before Android 10 background location was granted together with the foreground
-        // permission, so demanding ACCESS_BACKGROUND_LOCATION there would make the wizard
-        // impossible to finish.
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+        // permission, so there was nothing extra to ask for. Checking the nonexistent
+        // permission there would report DENIED and make the wizard impossible to finish.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
             ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_BACKGROUND_LOCATION,
             ) == PackageManager.PERMISSION_GRANTED
+        }
     },
     openIntent = { context ->
         // Android 11+ no longer shows a system dialog for "Allow all the time"; the user
@@ -91,6 +100,20 @@ private fun backgroundLocationStep(): VendorStep = VendorStep(
     },
 )
 
+private fun notificationsStep(): VendorStep = VendorStep(
+    kind = StepKind.NOTIFICATIONS,
+    autoCheckable = true,
+    check = { context ->
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
+    },
+    openIntent = { context ->
+        // The persistent tracking notification is how the user and the system know that
+        // tracking is alive. The app-details fallback is handled by the UI.
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    },
+)
+
 private fun batteryOptimizationStep(): VendorStep = VendorStep(
     kind = StepKind.BATTERY_OPTIMIZATION,
     autoCheckable = true,
@@ -99,16 +122,11 @@ private fun batteryOptimizationStep(): VendorStep = VendorStep(
             ?.isIgnoringBatteryOptimizations(context.packageName) == true
     },
     openIntent = { context ->
-        val request = Intent(
+        // The general battery list is the UI's fallback if this request has no handler.
+        Intent(
             Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
             Uri.parse("package:${context.packageName}"),
         )
-        // Some builds do not handle the per-package request; the general list still works.
-        if (request.resolveActivity(context.packageManager) != null) {
-            request
-        } else {
-            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-        }
     },
 )
 
