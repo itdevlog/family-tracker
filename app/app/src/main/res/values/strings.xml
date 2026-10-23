@@ -37,8 +37,13 @@
     <string name="pair_qr_error_encode">Не удалось построить QR-код. Продиктуйте цифры вручную.</string>
     <string name="pair_qr_error_no_server">Адрес сервера не сохранён. Вернитесь к регистрации и укажите его.</string>
 
-    <string name="parent_home_coming_soon">Карта появится в следующей задаче</string>
     <string name="parent_home_show_qr">Показать QR для привязки ребёнка</string>
+    <string name="parent_map_status_online">Онлайн</string>
+    <string name="parent_map_status_reconnecting">Переподключение…</string>
+    <string name="parent_map_status_unauthorized">Нет доступа к серверу</string>
+    <string name="parent_map_children_count">Детей: %1$d</string>
+    <string name="parent_map_empty">Нет привязанных детей</string>
+    <string name="parent_map_qr">QR</string>
 
     <string name="child_pair_title">Привязать телефон ребёнка</string>
     <string name="child_pair_hint">Отсканируйте QR-код с телефона родителя или введите код из 6 цифр вручную.</string>

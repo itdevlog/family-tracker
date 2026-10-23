@@ -77,6 +77,7 @@ dependencies {
     implementation("io.ktor:ktor-client-websockets:3.0.1")
 
     implementation("com.google.zxing:core:3.5.3")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
