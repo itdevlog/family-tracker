@@ -84,6 +84,35 @@ class IdleClusteringTest {
     }
 
     @Test
+    fun `fifty-six metres apart is outside the fifty metre stop radius`() {
+        // 0.0005 degrees of latitude is about 55.6 m. The pair stands for five minutes,
+        // so only the radius can keep it out of the result; a radius of 80 m fails here.
+        val stops = findStops(
+            listOf(
+                point(0, lat = 55.7500),
+                point(5, lat = 55.7505),
+            ),
+        )
+
+        assertTrue(stops.isEmpty())
+    }
+
+    @Test
+    fun `thirty-nine metres apart stays inside the fifty metre stop radius`() {
+        // 0.00035 degrees of latitude is about 39 m, so this is one stop. A radius of
+        // 30 m (or any value below ~39 m) fails here.
+        val stops = findStops(
+            listOf(
+                point(0, lat = 55.7500),
+                point(5, lat = 55.75035),
+            ),
+        )
+
+        assertEquals(1, stops.size)
+        assertEquals(2, stops.single().pointCount)
+    }
+
+    @Test
     fun `stop coordinates are the mean of its points`() {
         val stops = findStops(
             listOf(

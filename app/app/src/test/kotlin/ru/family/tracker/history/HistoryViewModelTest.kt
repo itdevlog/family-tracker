@@ -7,6 +7,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -169,13 +171,19 @@ class HistoryViewModelTest {
             val yesterday = today.minusDays(1)
             val yesterdayFrom = "2026-10-18T21:00:00Z"
             val yesterdayStarted = CompletableDeferred<Unit>()
+            val yesterdayCancelled = CompletableDeferred<Unit>()
             val yesterdayGate = CompletableDeferred<Unit>()
 
             val engine = MockEngine { request ->
                 requests += request
                 if (request.url.parameters["from"] == yesterdayFrom) {
                     yesterdayStarted.complete(Unit)
-                    yesterdayGate.await()
+                    try {
+                        yesterdayGate.await()
+                    } catch (cancelled: CancellationException) {
+                        yesterdayCancelled.complete(Unit)
+                        throw cancelled
+                    }
                     respond(
                         """
                         [
@@ -211,7 +219,9 @@ class HistoryViewModelTest {
             assertEquals(1, latest.points.size)
             assertEquals(55.75, latest.points.single().lat, 1e-9)
 
-            // Let the abandoned request finish: its stale answer must not win.
+            // The in-flight request must actually be cancelled, not just ignored when
+            // its response eventually arrives. Removing loadJob?.cancel() fails here.
+            withTimeout(5_000) { yesterdayCancelled.await() }
             yesterdayGate.complete(Unit)
             advanceUntilIdle()
 
@@ -219,5 +229,48 @@ class HistoryViewModelTest {
             assertEquals(1, viewModel.state.value.points.size)
             assertEquals(55.75, viewModel.state.value.points.single().lat, 1e-9)
             assertEquals(3, requests.size)
+        }
+
+    @Test
+    fun `refresh keeps the shown route while reloading and when the reload fails`() =
+        historyTest {
+            val gate = CompletableDeferred<Unit>()
+            var call = 0
+            val engine = MockEngine {
+                call += 1
+                if (call == 1) {
+                    respond(
+                        """
+                        [
+                          {"lat":55.75,"lon":37.61,"recorded_at":"2026-10-20T06:00:00Z"},
+                          {"lat":55.75,"lon":37.61,"recorded_at":"2026-10-20T06:05:00Z"}
+                        ]
+                        """.trimIndent(),
+                        HttpStatusCode.OK,
+                        jsonHeaders(),
+                    )
+                } else {
+                    gate.await()
+                    respond(
+                        """{"error":"boom"}""",
+                        HttpStatusCode.InternalServerError,
+                        jsonHeaders(),
+                    )
+                }
+            }
+            val viewModel = viewModel(engine)
+            val loaded = viewModel.state.first { !it.loading && it.points.isNotEmpty() }
+            assertEquals(1, loaded.stops.size)
+
+            viewModel.refresh()
+            val reloading = viewModel.state.first { it.loading }
+            assertEquals(2, reloading.points.size)
+            assertEquals(1, reloading.stops.size)
+
+            gate.complete(Unit)
+            val failed = viewModel.state.first { !it.loading && it.error != null }
+            assertEquals(R.string.history_error_load, failed.error)
+            assertEquals(2, failed.points.size)
+            assertEquals(1, failed.stops.size)
         }
 }

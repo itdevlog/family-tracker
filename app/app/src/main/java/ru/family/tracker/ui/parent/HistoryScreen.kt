@@ -61,6 +61,7 @@ import java.util.Locale
 private const val HISTORY_ZOOM = 15.0
 private const val ROUTE_WIDTH_PX = 6f
 private const val CAMERA_PADDING_PX = 96
+private val HISTORY_INITIAL_CENTER = GeoPoint(55.7558, 37.6173)
 
 /**
  * A child's route for one day: the whole-day polyline plus markers for stops.
@@ -228,6 +229,7 @@ private fun DayMap(
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             controller.setZoom(HISTORY_ZOOM)
+            controller.setCenter(HISTORY_INITIAL_CENTER)
             // Tile licence requires visible attribution ("© OpenStreetMap contributors").
             overlays.add(CopyrightOverlay(context))
         }

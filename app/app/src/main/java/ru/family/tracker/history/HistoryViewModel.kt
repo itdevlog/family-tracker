@@ -100,10 +100,16 @@ class HistoryViewModel(
         loadJob?.cancel()
         val requestedDate = date
         val generation = ++loadGeneration
+        val previous = _state.value
+        // Keep the already shown route on a same-day reload (refresh/retry); a date
+        // change must not display the previous day under the new date.
+        val keepRoute = previous.date == requestedDate
 
         _state.value = HistoryState(
             date = requestedDate,
             loading = true,
+            points = if (keepRoute) previous.points else emptyList(),
+            stops = if (keepRoute) previous.stops else emptyList(),
             canGoBack = requestedDate.isAfter(oldestDate()),
             canGoForward = requestedDate.isBefore(today()),
         )
@@ -118,6 +124,9 @@ class HistoryViewModel(
                 // A cancelled coroutine can still finish a blocking call; the date and
                 // generation checks make a stale answer harmless even then.
                 if (!isCurrent(requestedDate, generation)) return@launch
+                // Compute once: StateFlow.update may retry its lambda on a concurrent
+                // write, and findStops is O(n log n).
+                val stops = findStops(points)
                 _state.update { current ->
                     if (!isCurrent(requestedDate, generation)) {
                         current
@@ -125,7 +134,7 @@ class HistoryViewModel(
                         current.copy(
                             loading = false,
                             points = points,
-                            stops = findStops(points),
+                            stops = stops,
                             error = null,
                         )
                     }
@@ -151,10 +160,10 @@ class HistoryViewModel(
             if (!isCurrent(date, generation)) {
                 current
             } else {
+                // Keep points/stops: an error after a refresh is shown over the route
+                // that is already on screen. A first load has nothing to keep.
                 current.copy(
                     loading = false,
-                    points = emptyList(),
-                    stops = emptyList(),
                     error = messageRes,
                 )
             }
