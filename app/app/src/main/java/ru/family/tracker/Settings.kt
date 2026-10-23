@@ -49,6 +49,27 @@ class Settings(private val store: KeyValueStore) {
         set(value) = store.putString(KEY_WIZARD_DONE, value.toString())
 
     /**
+     * Wall-clock time of the last successful `POST /locations` by this device.
+     *
+     * Kept outside the point queue, which is drained on success: the child UI needs a
+     * record of delivery even when there is nothing left to upload. No coordinates are
+     * stored here.
+     */
+    var lastUploadAtMillis: Long?
+        get() = store.getString(KEY_LAST_UPLOAD_AT)?.toLongOrNull()
+        set(value) = store.putString(KEY_LAST_UPLOAD_AT, value?.toString())
+
+    /**
+     * Status of the most recent upload rejection, if any (401/403).
+     *
+     * Cleared only by a successful upload of a later batch, so the child keeps seeing
+     * "server rejected access" until re-pairing actually fixes the token.
+     */
+    var lastUploadErrorCode: Int?
+        get() = store.getString(KEY_LAST_UPLOAD_ERROR)?.toIntOrNull()
+        set(value) = store.putString(KEY_LAST_UPLOAD_ERROR, value?.toString())
+
+    /**
      * `created_at` of the newest SOS event already pushed to this parent.
      *
      * The ntfy message itself carries no payload we rely on: every message triggers a
@@ -85,6 +106,8 @@ class Settings(private val store: KeyValueStore) {
         private const val KEY_TOKEN = "token"
         private const val KEY_NTFY = "ntfy_config"
         private const val KEY_WIZARD_DONE = "wizard_done"
+        private const val KEY_LAST_UPLOAD_AT = "last_upload_at"
+        private const val KEY_LAST_UPLOAD_ERROR = "last_upload_error"
         private const val KEY_LAST_POINT = "last_point"
         private const val KEY_LAST_SOS_NOTIFIED_AT = "last_sos_notified_at"
 

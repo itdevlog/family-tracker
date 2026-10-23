@@ -77,6 +77,19 @@ class SosSenderTest {
     }
 
     @Test
+    fun `pending count follows the outbox`() = runTest {
+        val sender = SosSender(dao, api(HttpStatusCode.NoContent))
+        assertEquals(0, sender.pendingCount())
+
+        dao.insert(SosEventEntity(lat = 1.0, lon = 2.0, createdAtMillis = 100))
+        dao.insert(SosEventEntity(lat = 3.0, lon = 4.0, createdAtMillis = 200))
+        assertEquals(2, sender.pendingCount())
+
+        assertTrue(sender.flushSos())
+        assertEquals(0, sender.pendingCount())
+    }
+
+    @Test
     fun `accepted event leaves the queue empty`() = runTest {
         val sender = SosSender(dao, api(HttpStatusCode.NoContent))
 

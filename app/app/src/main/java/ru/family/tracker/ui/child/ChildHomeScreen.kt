@@ -43,6 +43,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -88,6 +91,8 @@ fun ChildHomeScreen(
     var resultName by rememberSaveable { mutableStateOf(SosStatus.IDLE.name) }
     var sending by remember { mutableStateOf(false) }
     var locationMissing by rememberSaveable { mutableStateOf(false) }
+    var uploadStatus by remember { mutableStateOf<UploadStatusSnapshot?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Never trust a restored SENDING: the coroutine that would finish it no longer exists.
     LaunchedEffect(Unit) {
@@ -96,6 +101,41 @@ fun ChildHomeScreen(
 
     val resultStatus = restoredSosStatus(resultName)
     val status = if (sending) SosStatus.SENDING else resultStatus
+
+    // Re-read on every resume and every 30 s while the screen is visible. Settings and
+    // ConnectivityManager are IO-ish, so keep them off the main thread.
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                uploadStatus = withContext(Dispatchers.IO) {
+                    UploadStatusSnapshot(
+                        lastUploadAtMillis = settings.lastUploadAtMillis,
+                        errorCode = settings.lastUploadErrorCode,
+                        online = isNetworkOnline(context),
+                        nowMillis = System.currentTimeMillis(),
+                    )
+                }
+                delay(UPLOAD_STATUS_REFRESH_MS)
+            }
+        }
+    }
+
+    // A failed SOS stays PENDING until Room confirms the outbox is empty. This also covers
+    // delivery by SosFlushWorker while the screen is open, so the child sees "sent"
+    // without pressing the button again.
+    LaunchedEffect(status) {
+        if (status != SosStatus.PENDING) return@LaunchedEffect
+        while (true) {
+            delay(SOS_PENDING_POLL_MS)
+            val pending = withContext(Dispatchers.IO) {
+                runCatching { sosSender.pendingCount() }.getOrNull()
+            }
+            if (pending == 0) {
+                resultName = SosStatus.SENT.name
+                break
+            }
+        }
+    }
 
     fun sendSos() {
         if (sending) return
@@ -193,6 +233,34 @@ fun ChildHomeScreen(
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+        uploadStatus?.let { snapshot ->
+            val kind = uploadStatusKind(snapshot)
+            val lastUpload = snapshot.lastUploadAtMillis ?: snapshot.nowMillis
+            val text = when (kind) {
+                UploadStatusKind.REJECTED -> stringResource(R.string.child_upload_rejected)
+                UploadStatusKind.NEVER -> stringResource(R.string.child_upload_never)
+                UploadStatusKind.ONLINE -> stringResource(
+                    R.string.child_upload_online,
+                    formatRelativeTime(lastUpload, snapshot.nowMillis),
+                )
+                UploadStatusKind.OFFLINE -> stringResource(
+                    R.string.child_upload_offline,
+                    formatRelativeTime(lastUpload, snapshot.nowMillis),
+                )
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (kind == UploadStatusKind.REJECTED) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -323,4 +391,6 @@ fun LongPressSosButton(
 }
 
 internal const val HOLD_MS = 2_000
+internal const val UPLOAD_STATUS_REFRESH_MS = 30_000L
+internal const val SOS_PENDING_POLL_MS = 5_000L
 private const val SOS_RELEASE_MS = 150

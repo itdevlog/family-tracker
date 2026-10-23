@@ -55,6 +55,9 @@ class SosSender(
         drainLocked()
     }
 
+    /** Number of SOS events still waiting in Room; the child UI polls this after a failure. */
+    suspend fun pendingCount(): Int = dao.count()
+
     private suspend fun drainLocked(): Boolean {
         val pending = dao.pending(MAX_BATCH)
         if (pending.isEmpty()) return true

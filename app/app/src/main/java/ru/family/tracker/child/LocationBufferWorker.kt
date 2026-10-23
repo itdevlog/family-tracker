@@ -32,7 +32,7 @@ class LocationBufferWorker(
             ?: return Result.success()
         if (!container.settings.canTrack()) return Result.success()
 
-        val uploader = LocationUploader(container.room.points(), container.api)
+        val uploader = LocationUploader(container.room.points(), container.api, container.settings)
         val locationOutcome = uploader.flushOnce()
 
         // A network-constrained location run is also a good moment to drain a queued SOS.

@@ -2,6 +2,7 @@ package ru.family.tracker.child
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import ru.family.tracker.Settings
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ApiException
 import ru.family.tracker.data.api.MAX_POINTS_PER_BATCH
@@ -31,7 +32,9 @@ sealed interface FlushOutcome {
 class LocationUploader(
     private val dao: PointDao,
     private val api: ApiClient,
+    private val settings: Settings,
     private val batchSize: Int = MAX_POINTS_PER_BATCH,
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
 
     suspend fun flushOnce(): FlushOutcome {
@@ -41,9 +44,14 @@ class LocationUploader(
         val ids = pending.map { it.id }
         return try {
             api.uploadPoints(pending.map { it.toPointIn() })
+            // The server accepted this batch: record delivery and clear any old 401/403.
+            settings.lastUploadAtMillis = now()
+            settings.lastUploadErrorCode = null
             dao.deleteUploaded(ids)
             FlushOutcome.Uploaded(ids.size)
         } catch (error: ApiException) {
+            // A rejected token/role cannot be fixed by retrying; the child UI must say so.
+            if (error.status in AUTH_STATUSES) settings.lastUploadErrorCode = error.status
             if (error.status in DROP_STATUSES) {
                 dao.deleteUploaded(ids)
                 Log.w(TAG, "Dropped ${ids.size} point(s) rejected with HTTP ${error.status}")
@@ -62,6 +70,9 @@ class LocationUploader(
     companion object {
         /** Statuses that describe the payload itself, not a temporary condition. */
         private val DROP_STATUSES = setOf(400, 403, 413, 422)
+
+        /** Statuses that mean the child token/role is no longer accepted. */
+        private val AUTH_STATUSES = setOf(401, 403)
 
         private const val TAG = "LocationUploader"
     }

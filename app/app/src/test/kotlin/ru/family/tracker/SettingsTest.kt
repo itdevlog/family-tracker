@@ -93,6 +93,34 @@ class SettingsTest {
     }
 
     @Test
+    fun `last upload timestamp and error round-trip`() {
+        val settings = Settings(store)
+        assertNull(settings.lastUploadAtMillis)
+        assertNull(settings.lastUploadErrorCode)
+
+        settings.lastUploadAtMillis = 1_700_000_000_000
+        settings.lastUploadErrorCode = 401
+
+        val reloaded = Settings(store)
+        assertEquals(1_700_000_000_000L, reloaded.lastUploadAtMillis)
+        assertEquals(401, reloaded.lastUploadErrorCode)
+    }
+
+    @Test
+    fun `last upload status clears independently`() {
+        val settings = Settings(store)
+        settings.lastUploadAtMillis = 42L
+        settings.lastUploadErrorCode = 403
+
+        settings.lastUploadAtMillis = null
+        settings.lastUploadErrorCode = null
+
+        val reloaded = Settings(store)
+        assertNull(reloaded.lastUploadAtMillis)
+        assertNull(reloaded.lastUploadErrorCode)
+    }
+
+    @Test
     fun `wizardDone round-trip`() {
         val settings = Settings(store)
         assertFalse(settings.wizardDone)

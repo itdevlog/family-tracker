@@ -167,6 +167,11 @@
     <string name="child_sos_pending">Пока не отправлено — отправим при появлении сети</string>
     <string name="child_sos_no_location">Ваше местоположение ещё не определено — сигнал отправлен без координат.</string>
 
+    <string name="child_upload_online">Онлайн · последняя отправка %1$s</string>
+    <string name="child_upload_offline">Нет сети · последняя отправка %1$s</string>
+    <string name="child_upload_never">Отправок ещё не было</string>
+    <string name="child_upload_rejected">Сервер отклонил доступ — привяжите ребёнка заново</string>
+
     <string name="child_wizard_open">Проверить настройки фона</string>
     <string name="child_wizard_title">Работа в фоне</string>
     <string name="child_wizard_intro">Телефон может усыплять приложения, чтобы экономить заряд. Разрешите Family Tracker работать в фоне, иначе местоположение будет обновляться с перерывами, а иногда отслеживание остановится совсем.</string>
