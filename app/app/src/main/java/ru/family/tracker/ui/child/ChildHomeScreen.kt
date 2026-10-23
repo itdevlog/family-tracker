@@ -56,7 +56,7 @@ import ru.family.tracker.Settings
 import ru.family.tracker.child.SosFlushWorker
 import ru.family.tracker.child.SosSender
 
-internal enum class SosStatus { IDLE, SENDING, SENT, PENDING }
+internal enum class SosStatus { IDLE, SENDING, SENT, PENDING, REJECTED }
 
 /**
  * Saved results survive recreation; SENDING does not.
@@ -67,6 +67,7 @@ internal enum class SosStatus { IDLE, SENDING, SENT, PENDING }
 internal fun restoredSosStatus(savedName: String?): SosStatus = when (savedName) {
     SosStatus.SENT.name -> SosStatus.SENT
     SosStatus.PENDING.name -> SosStatus.PENDING
+    SosStatus.REJECTED.name -> SosStatus.REJECTED
     else -> SosStatus.IDLE
 }
 
@@ -121,18 +122,26 @@ fun ChildHomeScreen(
     }
 
     // A failed SOS stays PENDING until Room confirms the outbox is empty. This also covers
-    // delivery by SosFlushWorker while the screen is open, so the child sees "sent"
-    // without pressing the button again.
-    LaunchedEffect(status) {
+    // delivery by SosFlushWorker while the screen is open, so the child sees the outcome
+    // without pressing the button again. Polling stops as soon as the screen is paused.
+    LaunchedEffect(status, lifecycleOwner) {
         if (status != SosStatus.PENDING) return@LaunchedEffect
-        while (true) {
-            delay(SOS_PENDING_POLL_MS)
-            val pending = withContext(Dispatchers.IO) {
-                runCatching { sosSender.pendingCount() }.getOrNull()
-            }
-            if (pending == 0) {
-                resultName = SosStatus.SENT.name
-                break
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                delay(SOS_PENDING_POLL_MS)
+                val (pending, dropError) = withContext(Dispatchers.IO) {
+                    runCatching {
+                        sosSender.pendingCount() to settings.lastSosDropErrorCode
+                    }.getOrNull() ?: (1 to null)
+                }
+                if (pending == 0) {
+                    resultName = if (dropError != null) {
+                        SosStatus.REJECTED.name
+                    } else {
+                        SosStatus.SENT.name
+                    }
+                    break
+                }
             }
         }
     }
@@ -149,23 +158,28 @@ fun ChildHomeScreen(
                 val point = withContext(Dispatchers.IO) { settings.lastPoint }
                 locationMissing = point == null
 
-                val sent = withContext(Dispatchers.IO) {
+                val (sent, dropError) = withContext(Dispatchers.IO) {
                     try {
-                        sosSender.trySend(
+                        val accepted = sosSender.trySend(
                             lat = point?.lat ?: 0.0,
                             lon = point?.lon ?: 0.0,
                         )
+                        accepted to settings.lastSosDropErrorCode
                     } catch (cancellation: CancellationException) {
                         // The press may already be in Room; schedule a worker before letting the
                         // UI coroutine die (rotation/back), otherwise the event waits for tracking.
                         runCatching { SosFlushWorker.enqueue(context) }
                         throw cancellation
                     } catch (_: Exception) {
-                        false
+                        false to null
                     }
                 }
 
-                resultName = if (sent) SosStatus.SENT.name else SosStatus.PENDING.name
+                resultName = when {
+                    !sent -> SosStatus.PENDING.name
+                    dropError != null -> SosStatus.REJECTED.name
+                    else -> SosStatus.SENT.name
+                }
                 if (!sent) {
                     runCatching { SosFlushWorker.enqueue(context) }
                 }
@@ -221,10 +235,19 @@ fun ChildHomeScreen(
                 textAlign = TextAlign.Center,
             )
 
+            SosStatus.REJECTED -> Text(
+                text = stringResource(R.string.child_sos_rejected),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+            )
+
             SosStatus.IDLE -> Unit
         }
 
-        if (locationMissing && status != SosStatus.IDLE && status != SosStatus.SENDING) {
+        if (locationMissing && status != SosStatus.IDLE &&
+            status != SosStatus.SENDING && status != SosStatus.REJECTED
+        ) {
             Text(
                 text = stringResource(R.string.child_sos_no_location),
                 style = MaterialTheme.typography.bodySmall,
@@ -240,6 +263,7 @@ fun ChildHomeScreen(
             val text = when (kind) {
                 UploadStatusKind.REJECTED -> stringResource(R.string.child_upload_rejected)
                 UploadStatusKind.NEVER -> stringResource(R.string.child_upload_never)
+                UploadStatusKind.OFFLINE_NEVER -> stringResource(R.string.child_upload_offline_never)
                 UploadStatusKind.ONLINE -> stringResource(
                     R.string.child_upload_online,
                     formatRelativeTime(lastUpload, snapshot.nowMillis),

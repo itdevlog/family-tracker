@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import ru.family.tracker.Settings
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ApiException
 import ru.family.tracker.data.db.SosDao
@@ -24,6 +25,7 @@ import ru.family.tracker.data.db.SosEventEntity
 class SosSender(
     private val dao: SosDao,
     private val api: ApiClient,
+    private val settings: Settings,
 ) {
 
     /**
@@ -62,6 +64,7 @@ class SosSender(
         val pending = dao.pending(MAX_BATCH)
         if (pending.isEmpty()) return true
 
+        var dropped = false
         for (event in pending) {
             try {
                 api.sendSos(event.lat, event.lon)
@@ -71,6 +74,10 @@ class SosSender(
             } catch (error: ApiException) {
                 if (error.status in DROP_STATUSES) {
                     dao.delete(listOf(event.id))
+                    // The queue is drained, but the parent never got this alert. Keep the
+                    // code so the child UI can say "rejected" instead of "sent".
+                    settings.lastSosDropErrorCode = error.status
+                    dropped = true
                     Log.w(TAG, "Dropped an SOS event rejected with HTTP ${error.status}")
                 } else {
                     // 401/429/5xx: keep the event; a later flush may succeed.
@@ -82,6 +89,8 @@ class SosSender(
             }
         }
 
+        // Only a run with no rejected event proves the stale drop marker is obsolete.
+        if (!dropped) settings.lastSosDropErrorCode = null
         return dao.count() == 0
     }
 

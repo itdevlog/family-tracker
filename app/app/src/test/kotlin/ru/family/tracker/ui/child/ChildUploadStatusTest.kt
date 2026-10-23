@@ -74,6 +74,30 @@ class ChildUploadStatusTest {
     }
 
     @Test
+    fun `no timestamp while offline is offline never`() {
+        val snapshot = UploadStatusSnapshot(
+            lastUploadAtMillis = null,
+            errorCode = null,
+            online = false,
+            nowMillis = now,
+        )
+
+        assertEquals(UploadStatusKind.OFFLINE_NEVER, uploadStatusKind(snapshot))
+    }
+
+    @Test
+    fun `a rejected token overrides offline never`() {
+        val snapshot = UploadStatusSnapshot(
+            lastUploadAtMillis = null,
+            errorCode = 403,
+            online = false,
+            nowMillis = now,
+        )
+
+        assertEquals(UploadStatusKind.REJECTED, uploadStatusKind(snapshot))
+    }
+
+    @Test
     fun `timestamp is online or offline according to connectivity`() {
         val base = UploadStatusSnapshot(
             lastUploadAtMillis = now - 60_000,

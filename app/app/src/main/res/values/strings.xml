@@ -165,10 +165,12 @@
     <string name="child_sos_sending">Отправляем сигнал…</string>
     <string name="child_sos_sent">Родитель получил сигнал</string>
     <string name="child_sos_pending">Пока не отправлено — отправим при появлении сети</string>
+    <string name="child_sos_rejected">Сервер отклонил сигнал — родитель его не получил</string>
     <string name="child_sos_no_location">Ваше местоположение ещё не определено — сигнал отправлен без координат.</string>
 
     <string name="child_upload_online">Онлайн · последняя отправка %1$s</string>
     <string name="child_upload_offline">Нет сети · последняя отправка %1$s</string>
+    <string name="child_upload_offline_never">Нет сети · отправок ещё не было</string>
     <string name="child_upload_never">Отправок ещё не было</string>
     <string name="child_upload_rejected">Сервер отклонил доступ — привяжите ребёнка заново</string>
 

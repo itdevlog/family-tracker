@@ -16,11 +16,14 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import ru.family.tracker.KeyValueStore
+import ru.family.tracker.Settings
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.db.SosDao
 import ru.family.tracker.data.db.SosEventEntity
@@ -31,8 +34,19 @@ import java.io.IOException
 @RunWith(RobolectricTestRunner::class)
 class SosSenderTest {
 
+    private class MemoryStore : KeyValueStore {
+        private val values = mutableMapOf<String, String>()
+
+        override fun getString(key: String): String? = values[key]
+
+        override fun putString(key: String, value: String?) {
+            if (value == null) values.remove(key) else values[key] = value
+        }
+    }
+
     private lateinit var database: TrackerDatabase
     private lateinit var dao: SosDao
+    private lateinit var settings: Settings
 
     @Before
     fun setUp() {
@@ -41,6 +55,7 @@ class SosSenderTest {
             .allowMainThreadQueries()
             .build()
         dao = database.sos()
+        settings = Settings(MemoryStore())
     }
 
     @After
@@ -66,7 +81,7 @@ class SosSenderTest {
 
     @Test
     fun `io failure queues the event and reports not sent`() = runTest {
-        val sender = SosSender(dao, failingApi())
+        val sender = SosSender(dao, failingApi(), settings)
 
         val sent = sender.trySend(55.75, 37.61)
 
@@ -78,7 +93,7 @@ class SosSenderTest {
 
     @Test
     fun `pending count follows the outbox`() = runTest {
-        val sender = SosSender(dao, api(HttpStatusCode.NoContent))
+        val sender = SosSender(dao, api(HttpStatusCode.NoContent), settings)
         assertEquals(0, sender.pendingCount())
 
         dao.insert(SosEventEntity(lat = 1.0, lon = 2.0, createdAtMillis = 100))
@@ -91,7 +106,7 @@ class SosSenderTest {
 
     @Test
     fun `accepted event leaves the queue empty`() = runTest {
-        val sender = SosSender(dao, api(HttpStatusCode.NoContent))
+        val sender = SosSender(dao, api(HttpStatusCode.NoContent), settings)
 
         val sent = sender.trySend(55.75, 37.61)
 
@@ -109,6 +124,7 @@ class SosSenderTest {
         val sender = SosSender(
             dao,
             ApiClient({ "https://server.example" }, { "child-token" }, engine),
+            settings,
         )
 
         assertFalse(sender.trySend(1.0, 2.0))
@@ -121,12 +137,35 @@ class SosSenderTest {
 
     @Test
     fun `unprocessable event is dropped instead of wedging the queue`() = runTest {
-        val sender = SosSender(dao, api(HttpStatusCode.UnprocessableEntity, """{"error":"bad"}"""))
+        val sender = SosSender(dao, api(HttpStatusCode.UnprocessableEntity, """{"error":"bad"}"""), settings)
 
         val sent = sender.trySend(1.0, 2.0)
 
         assertTrue("queue is empty after the invalid event is dropped", sent)
         assertEquals(0, dao.count())
+        assertEquals(422, settings.lastSosDropErrorCode)
+    }
+
+    @Test
+    fun `an accepted event clears a previous drop error`() = runTest {
+        settings.lastSosDropErrorCode = 422
+        val sender = SosSender(dao, api(HttpStatusCode.NoContent), settings)
+
+        assertTrue(sender.trySend(1.0, 2.0))
+
+        assertNull(settings.lastSosDropErrorCode)
+        assertEquals(0, dao.count())
+    }
+
+    @Test
+    fun `a transient failure keeps a previous drop error`() = runTest {
+        settings.lastSosDropErrorCode = 422
+        val sender = SosSender(dao, api(HttpStatusCode.InternalServerError, """{"error":"later"}"""), settings)
+
+        assertFalse(sender.trySend(1.0, 2.0))
+
+        assertEquals(422, settings.lastSosDropErrorCode)
+        assertEquals(1, dao.count())
     }
 
     @Test
@@ -136,7 +175,7 @@ class SosSenderTest {
             HttpStatusCode.TooManyRequests,
             HttpStatusCode.InternalServerError,
         ).forEach { status ->
-            val sender = SosSender(dao, api(status, """{"error":"later"}"""))
+            val sender = SosSender(dao, api(status, """{"error":"later"}"""), settings)
 
             assertFalse("status $status must be retried", sender.trySend(1.0, 2.0))
             assertEquals("status $status must keep the event", 1, dao.count())
@@ -161,6 +200,7 @@ class SosSenderTest {
         val sender = SosSender(
             dao,
             ApiClient({ "https://server.example" }, { "child-token" }, engine),
+            settings,
         )
 
         assertTrue(sender.flushSos())
@@ -184,6 +224,7 @@ class SosSenderTest {
         val sender = SosSender(
             dao,
             ApiClient({ "https://server.example" }, { "child-token" }, engine),
+            settings,
         )
 
         val first = async { sender.flushSos() }
@@ -207,6 +248,7 @@ class SosSenderTest {
         val sender = SosSender(
             dao,
             ApiClient({ "https://server.example" }, { "child-token" }, engine),
+            settings,
         )
 
         assertFalse(sender.flushSos())

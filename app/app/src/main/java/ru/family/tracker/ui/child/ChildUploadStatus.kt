@@ -16,7 +16,7 @@ internal data class UploadStatusSnapshot(
     val nowMillis: Long,
 )
 
-internal enum class UploadStatusKind { ONLINE, OFFLINE, NEVER, REJECTED }
+internal enum class UploadStatusKind { ONLINE, OFFLINE, NEVER, OFFLINE_NEVER, REJECTED }
 
 /**
  * A rejected token wins over connectivity and timestamps: an online network with a revoked
@@ -24,6 +24,7 @@ internal enum class UploadStatusKind { ONLINE, OFFLINE, NEVER, REJECTED }
  */
 internal fun uploadStatusKind(snapshot: UploadStatusSnapshot): UploadStatusKind = when {
     snapshot.errorCode == 401 || snapshot.errorCode == 403 -> UploadStatusKind.REJECTED
+    snapshot.lastUploadAtMillis == null && !snapshot.online -> UploadStatusKind.OFFLINE_NEVER
     snapshot.lastUploadAtMillis == null -> UploadStatusKind.NEVER
     snapshot.online -> UploadStatusKind.ONLINE
     else -> UploadStatusKind.OFFLINE

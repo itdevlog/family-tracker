@@ -70,6 +70,16 @@ class Settings(private val store: KeyValueStore) {
         set(value) = store.putString(KEY_LAST_UPLOAD_ERROR, value?.toString())
 
     /**
+     * Status of the most recent SOS event the server permanently rejected (400/403/413/422).
+     *
+     * Such an event is removed from the outbox so it cannot wedge the queue, but the child
+     * must not be told "sent". Cleared by the next accepted SOS, not by a transient failure.
+     */
+    var lastSosDropErrorCode: Int?
+        get() = store.getString(KEY_LAST_SOS_DROP_ERROR)?.toIntOrNull()
+        set(value) = store.putString(KEY_LAST_SOS_DROP_ERROR, value?.toString())
+
+    /**
      * `created_at` of the newest SOS event already pushed to this parent.
      *
      * The ntfy message itself carries no payload we rely on: every message triggers a
@@ -108,6 +118,7 @@ class Settings(private val store: KeyValueStore) {
         private const val KEY_WIZARD_DONE = "wizard_done"
         private const val KEY_LAST_UPLOAD_AT = "last_upload_at"
         private const val KEY_LAST_UPLOAD_ERROR = "last_upload_error"
+        private const val KEY_LAST_SOS_DROP_ERROR = "last_sos_drop_error"
         private const val KEY_LAST_POINT = "last_point"
         private const val KEY_LAST_SOS_NOTIFIED_AT = "last_sos_notified_at"
 

@@ -133,8 +133,7 @@ docker compose ps                          # у всех сервисов State:
 APK собирается из каталога `app/`:
 
 ```bash
-cd app
-./gradlew assembleRelease
+(cd app && ./gradlew assembleRelease)
 ```
 
 Готовый файл: `app/build/outputs/apk/release/app-release.apk` внутри каталога `app/` (от корня репозитория — `app/app/build/outputs/apk/release/app-release.apk`). Один и тот же APK ставится на телефон родителя и на телефон ребёнка; роль выбирается при первом запуске.

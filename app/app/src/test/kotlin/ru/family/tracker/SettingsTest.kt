@@ -121,6 +121,18 @@ class SettingsTest {
     }
 
     @Test
+    fun `last SOS drop error round-trips and clears`() {
+        val settings = Settings(store)
+        assertNull(settings.lastSosDropErrorCode)
+
+        settings.lastSosDropErrorCode = 422
+        assertEquals(422, Settings(store).lastSosDropErrorCode)
+
+        settings.lastSosDropErrorCode = null
+        assertNull(Settings(store).lastSosDropErrorCode)
+    }
+
+    @Test
     fun `wizardDone round-trip`() {
         val settings = Settings(store)
         assertFalse(settings.wizardDone)

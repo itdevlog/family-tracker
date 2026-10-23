@@ -10,6 +10,7 @@ class ChildHomeStateTest {
     fun `real results survive recreation`() {
         assertEquals(SosStatus.SENT, restoredSosStatus(SosStatus.SENT.name))
         assertEquals(SosStatus.PENDING, restoredSosStatus(SosStatus.PENDING.name))
+        assertEquals(SosStatus.REJECTED, restoredSosStatus(SosStatus.REJECTED.name))
         assertEquals(SosStatus.IDLE, restoredSosStatus(SosStatus.IDLE.name))
     }
 

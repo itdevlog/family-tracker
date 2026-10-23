@@ -42,5 +42,5 @@ class AppContainer(
     }
 
     /** Offline-first SOS outbox shared by the home screen and both flush workers. */
-    val sosSender: SosSender by lazy { SosSender(room.sos(), api) }
+    val sosSender: SosSender by lazy { SosSender(room.sos(), api, settings) }
 }
