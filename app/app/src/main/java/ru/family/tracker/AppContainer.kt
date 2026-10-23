@@ -7,6 +7,8 @@ import ru.family.tracker.child.LocationSource
 import ru.family.tracker.child.SosSender
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.db.TrackerDatabase
+import ru.family.tracker.parent.KtorNtfySocket
+import ru.family.tracker.parent.NtfySocket
 
 /**
  * Manual dependency container owned by [FamilyTrackerApp].
@@ -31,6 +33,9 @@ class AppContainer(
     var locationSourceFactory: (Context) -> LocationSource = { FusedLocationSource(it) }
 
     var flushScheduler: (Context) -> Unit = { LocationBufferWorker.enqueueFlush(it) }
+
+    /** Test seam: the parent SOS listener never opens a real ntfy socket in tests. */
+    var ntfySocketFactory: (NtfyConfig) -> NtfySocket = { KtorNtfySocket(it) }
 
     val api: ApiClient by lazy {
         apiOverride ?: ApiClient({ settings.baseUrl }, { settings.token })

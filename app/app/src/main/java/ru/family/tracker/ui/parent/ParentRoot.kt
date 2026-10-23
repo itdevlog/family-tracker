@@ -7,12 +7,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import ru.family.tracker.Role
 import ru.family.tracker.Settings
 import ru.family.tracker.data.api.ApiClient
+import ru.family.tracker.parent.SosListenerService
 
-private enum class ParentScreen { REGISTER, PAIR_QR, HOME, HISTORY }
+private enum class ParentScreen { REGISTER, PAIR_QR, HOME, HISTORY, SOS_HISTORY }
 
 private fun initialScreen(settings: Settings): ParentScreen =
     if (settings.token.isNullOrBlank()) ParentScreen.REGISTER else ParentScreen.HOME
@@ -33,6 +36,18 @@ fun ParentRoot(settings: Settings, api: ApiClient) {
         ParentScreen.HOME
     } else {
         storedScreen
+    }
+
+    // Keep the ntfy subscription alive while the parent app is in use. The service is
+    // idempotent (onCreate owns the listener), so recomposition/rotation is harmless.
+    val context = LocalContext.current
+    LaunchedEffect(settings.token, settings.ntfyConfig) {
+        if (settings.role == Role.PARENT &&
+            !settings.token.isNullOrBlank() &&
+            settings.ntfyConfig != null
+        ) {
+            SosListenerService.start(context)
+        }
     }
 
     when (screen) {
@@ -64,10 +79,16 @@ fun ParentRoot(settings: Settings, api: ApiClient) {
             api = api,
             settings = settings,
             onShowQr = { screenName = ParentScreen.PAIR_QR.name },
+            onShowSosHistory = { screenName = ParentScreen.SOS_HISTORY.name },
             onChildClick = { childId ->
                 historyChildId = childId
                 screenName = ParentScreen.HISTORY.name
             },
+        )
+
+        ParentScreen.SOS_HISTORY -> SosHistoryScreen(
+            api = api,
+            onBack = { screenName = ParentScreen.HOME.name },
         )
 
         ParentScreen.HISTORY -> {

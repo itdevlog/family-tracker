@@ -49,6 +49,17 @@ class Settings(private val store: KeyValueStore) {
         set(value) = store.putString(KEY_WIZARD_DONE, value.toString())
 
     /**
+     * `created_at` of the newest SOS event already pushed to this parent.
+     *
+     * The ntfy message itself carries no payload we rely on: every message triggers a
+     * `GET /sos?since=...` and this marker is what makes repeated messages (and repeated
+     * reconnects) idempotent. Stored as an ISO-8601 instant.
+     */
+    var lastSosNotifiedAt: String?
+        get() = store.getString(KEY_LAST_SOS_NOTIFIED_AT)
+        set(value) = store.putString(KEY_LAST_SOS_NOTIFIED_AT, value)
+
+    /**
      * Last fix seen by tracking, kept outside the upload outbox.
      *
      * The `points` table is drained/emptied by uploads, so it cannot answer "where is the
@@ -75,6 +86,7 @@ class Settings(private val store: KeyValueStore) {
         private const val KEY_NTFY = "ntfy_config"
         private const val KEY_WIZARD_DONE = "wizard_done"
         private const val KEY_LAST_POINT = "last_point"
+        private const val KEY_LAST_SOS_NOTIFIED_AT = "last_sos_notified_at"
 
         private val json = Json { ignoreUnknownKeys = true }
 

@@ -65,6 +65,7 @@ fun ParentMapScreen(
     settings: Settings,
     onShowQr: () -> Unit,
     modifier: Modifier = Modifier,
+    onShowSosHistory: () -> Unit = {},
     onChildClick: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -148,13 +149,18 @@ fun ParentMapScreen(
                 }
             }
 
-            Button(
-                onClick = onShowQr,
-                modifier = Modifier.semantics {
-                    contentDescription = qrDescription
-                },
-            ) {
-                Text(stringResource(R.string.parent_map_qr))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onShowSosHistory) {
+                    Text(stringResource(R.string.sos_history_title))
+                }
+                Button(
+                    onClick = onShowQr,
+                    modifier = Modifier.semantics {
+                        contentDescription = qrDescription
+                    },
+                ) {
+                    Text(stringResource(R.string.parent_map_qr))
+                }
             }
         }
 

@@ -62,6 +62,39 @@
     <string name="history_stop_title">Остановка</string>
     <string name="history_stop_snippet">с %1$s до %2$s, %3$d мин</string>
 
+    <string name="sos_channel_name">Тревоги SOS</string>
+    <string name="sos_channel_description">Экстренные сигналы от детей</string>
+    <string name="sos_notification_title">SOS от %1$s</string>
+    <string name="sos_notification_text">Нажмите, чтобы открыть карту</string>
+    <string name="sos_notification_child_fallback">ребёнок</string>
+
+    <string name="sos_listener_channel_name">Family Tracker активен</string>
+    <string name="sos_listener_channel_description">Приложение следит за сигналами SOS</string>
+    <string name="sos_listener_notification_title">Family Tracker активен</string>
+    <string name="sos_listener_notification_text">Следим за тревогами детей</string>
+
+    <string name="sos_alert_title">SOS</string>
+    <string name="sos_alert_child_unknown">Ребёнок</string>
+    <string name="sos_alert_time">Время: %1$s</string>
+    <string name="sos_alert_coords">Координаты: %1$s, %2$s</string>
+    <string name="sos_alert_ack">Подтвердить получение</string>
+    <string name="sos_alert_later">Позже</string>
+    <string name="sos_alert_ack_sending">Отправляем подтверждение…</string>
+    <string name="sos_alert_ack_error">Не удалось подтвердить получение. Проверьте подключение и повторите.</string>
+    <string name="sos_alert_retry">Повторить</string>
+    <string name="sos_alert_map_description">Карта места тревоги</string>
+
+    <string name="sos_history_title">Тревоги</string>
+    <string name="sos_history_back">Назад</string>
+    <string name="sos_history_refresh">Обновить</string>
+    <string name="sos_history_empty">Тревог пока нет</string>
+    <string name="sos_history_error_load">Не удалось загрузить тревоги. Проверьте подключение и повторите попытку.</string>
+    <string name="sos_history_error_ack">Не удалось подтвердить тревогу. Повторите попытку.</string>
+    <string name="sos_history_acknowledged">Подтверждено</string>
+    <string name="sos_history_not_acknowledged">Не подтверждено</string>
+    <string name="sos_history_ack">Подтвердить</string>
+    <string name="sos_history_child_unknown">Ребёнок</string>
+
     <string name="child_pair_title">Привязать телефон ребёнка</string>
     <string name="child_pair_hint">Отсканируйте QR-код с телефона родителя или введите код из 6 цифр вручную.</string>
     <string name="child_pair_name_label">Имя ребёнка</string>
