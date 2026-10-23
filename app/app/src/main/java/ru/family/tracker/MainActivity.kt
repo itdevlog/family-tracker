@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import ru.family.tracker.parent.SosAlert
 import ru.family.tracker.parent.SosAlertBus
 import ru.family.tracker.ui.theme.FamilyTrackerTheme
@@ -16,8 +18,8 @@ import ru.family.tracker.ui.theme.FamilyTrackerTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        showOnLockScreen()
         showSosAlert(intent)
+        setSosLockScreen(SosAlertBus.alert.value != null)
 
         val container = (application as FamilyTrackerApp).container
         setContent {
@@ -27,28 +29,43 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        // The overlay is the single owner of "an alert is visible": ack, "Позже" and
+        // back all clear the bus, and that must also release the lock-screen flags.
+        lifecycleScope.launch {
+            SosAlertBus.alert.collect { alert -> setSosLockScreen(alert != null) }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         showSosAlert(intent)
+        setSosLockScreen(SosAlertBus.alert.value != null)
     }
 
     /**
-     * A full-screen intent can arrive while the phone is locked. API 27+ has dedicated
-     * activity APIs; API 26 (the app minimum) still supports the equivalent window flags.
+     * Shows this activity over the keyguard only while a full-screen SOS alert is open.
+     *
+     * A normal map/history session must not become visible on the lock screen: the parent
+     * would otherwise see the child's coordinates without unlocking the phone. Both the
+     * modern activity APIs (API 27+) and the equivalent window flags are kept in sync so
+     * `enabled = false` reliably removes either form.
      */
-    private fun showOnLockScreen() {
+    internal fun setSosLockScreen(enabled: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
+            setShowWhenLocked(enabled)
+            setTurnScreenOn(enabled)
+        }
+        @Suppress("DEPRECATION")
+        val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        if (enabled) {
+            @Suppress("DEPRECATION")
+            window.addFlags(flags)
         } else {
             @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
-            )
+            window.clearFlags(flags)
         }
     }
 

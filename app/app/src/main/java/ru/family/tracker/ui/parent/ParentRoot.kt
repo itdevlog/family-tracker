@@ -1,7 +1,9 @@
 package ru.family.tracker.ui.parent
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -10,7 +12,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -56,65 +57,69 @@ fun ParentRoot(settings: Settings, api: ApiClient) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (screen) {
-            ParentScreen.REGISTER -> {
-                val factory = remember(settings, api) { registerParentViewModelFactory(settings, api) }
-                val registerViewModel: RegisterParentViewModel = viewModel(factory = factory)
-                val registerState by registerViewModel.state.collectAsStateWithLifecycle()
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when (screen) {
+                ParentScreen.REGISTER -> {
+                    val factory = remember(settings, api) { registerParentViewModelFactory(settings, api) }
+                    val registerViewModel: RegisterParentViewModel = viewModel(factory = factory)
+                    val registerState by registerViewModel.state.collectAsStateWithLifecycle()
 
-                LaunchedEffect(registerState) {
-                    if (registerState is RegisterState.Success) {
-                        screenName = ParentScreen.PAIR_QR.name
+                    LaunchedEffect(registerState) {
+                        if (registerState is RegisterState.Success) {
+                            screenName = ParentScreen.PAIR_QR.name
+                        }
                     }
+
+                    RegisterParentScreen(
+                        initialServerUrl = settings.baseUrl.orEmpty(),
+                        state = registerState,
+                        onSubmit = registerViewModel::submit,
+                    )
                 }
 
-                RegisterParentScreen(
-                    initialServerUrl = settings.baseUrl.orEmpty(),
-                    state = registerState,
-                    onSubmit = registerViewModel::submit,
+                ParentScreen.PAIR_QR -> PairQRScreen(
+                    settings = settings,
+                    api = api,
+                    onDone = { screenName = ParentScreen.HOME.name },
                 )
-            }
 
-            ParentScreen.PAIR_QR -> PairQRScreen(
-                settings = settings,
-                api = api,
-                onDone = { screenName = ParentScreen.HOME.name },
-            )
+                ParentScreen.HOME -> ParentMapScreen(
+                    api = api,
+                    settings = settings,
+                    onShowQr = { screenName = ParentScreen.PAIR_QR.name },
+                    onShowSosHistory = { screenName = ParentScreen.SOS_HISTORY.name },
+                    onChildClick = { childId ->
+                        historyChildId = childId
+                        screenName = ParentScreen.HISTORY.name
+                    },
+                )
 
-            ParentScreen.HOME -> ParentMapScreen(
-                api = api,
-                settings = settings,
-                onShowQr = { screenName = ParentScreen.PAIR_QR.name },
-                onShowSosHistory = { screenName = ParentScreen.SOS_HISTORY.name },
-                onChildClick = { childId ->
-                    historyChildId = childId
-                    screenName = ParentScreen.HISTORY.name
-                },
-            )
+                ParentScreen.SOS_HISTORY -> SosHistoryScreen(
+                    api = api,
+                    onBack = { screenName = ParentScreen.HOME.name },
+                )
 
-            ParentScreen.SOS_HISTORY -> SosHistoryScreen(
-                api = api,
-                onBack = { screenName = ParentScreen.HOME.name },
-            )
-
-            ParentScreen.HISTORY -> {
-                val childId = historyChildId
-                if (childId != null) {
-                    HistoryScreen(
-                        api = api,
-                        deviceId = childId,
-                        onBack = { screenName = ParentScreen.HOME.name },
-                    )
+                ParentScreen.HISTORY -> {
+                    val childId = historyChildId
+                    if (childId != null) {
+                        HistoryScreen(
+                            api = api,
+                            deviceId = childId,
+                            onBack = { screenName = ParentScreen.HOME.name },
+                        )
+                    }
                 }
             }
         }
 
+        // The card is a real layout row, not an overlay: on the SOS history screen it
+        // can no longer cover the last event rows.
         ParentNotificationSetup(
             visible = settings.role == Role.PARENT && !settings.token.isNullOrBlank(),
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp),
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }
 }
