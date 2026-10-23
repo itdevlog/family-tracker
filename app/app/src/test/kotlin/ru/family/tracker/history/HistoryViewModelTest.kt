@@ -131,6 +131,31 @@ class HistoryViewModelTest {
     }
 
     @Test
+    fun `zero coordinates are removed from the route and its stops`() = historyTest {
+        val engine = MockEngine {
+            respond(
+                """
+                [
+                  {"lat":0.0,"lon":0.0,"recorded_at":"2026-10-20T05:00:00Z"},
+                  {"lat":55.75,"lon":37.61,"recorded_at":"2026-10-20T05:02:00Z"},
+                  {"lat":55.75,"lon":37.61,"recorded_at":"2026-10-20T05:07:00Z"}
+                ]
+                """.trimIndent(),
+                HttpStatusCode.OK,
+                jsonHeaders(),
+            )
+        }
+        val viewModel = viewModel(engine)
+
+        val state = viewModel.state.first { !it.loading && it.points.isNotEmpty() }
+
+        assertEquals(2, state.points.size)
+        assertTrue(state.points.all { it.lat != 0.0 || it.lon != 0.0 })
+        assertEquals(1, state.stops.size)
+        assertEquals(2, state.stops.single().pointCount)
+    }
+
+    @Test
     fun `forbidden response becomes an access error with no points`() = historyTest {
         val engine = MockEngine {
             respond(

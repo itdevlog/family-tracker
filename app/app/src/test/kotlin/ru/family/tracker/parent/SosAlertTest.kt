@@ -2,6 +2,7 @@ package ru.family.tracker.parent
 
 import android.content.Intent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -64,5 +65,25 @@ class SosAlertTest {
 
         SosAlertBus.clear()
         assertNull(SosAlertBus.alert.value)
+    }
+
+    @Test
+    fun `showing the same event again keeps the current instance`() {
+        val alert = SosAlert.fromIntent(validIntent())!!
+        SosAlertBus.show(alert)
+
+        val duplicate = alert.copy(createdAtIso = "2026-10-20T10:11:00Z")
+        SosAlertBus.show(duplicate)
+
+        assertEquals(alert, SosAlertBus.alert.value)
+        SosAlertBus.clear()
+    }
+
+    @Test
+    fun `zero coordinates produce no alert map point while a real fix does`() {
+        val alert = SosAlert.fromIntent(validIntent())!!
+        assertNotNull(alert.mapPoint())
+
+        assertNull(alert.copy(lat = 0.0, lon = 0.0).mapPoint())
     }
 }

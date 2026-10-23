@@ -2,6 +2,8 @@ package ru.family.tracker.parent
 
 import android.content.Intent
 import kotlinx.coroutines.flow.MutableStateFlow
+import ru.family.tracker.data.MapPoint
+import ru.family.tracker.data.mapPointOrNull
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -60,6 +62,9 @@ data class SosAlert(
     }
 }
 
+/** Map target for this alert, or null when the child had no fix (`0.0/0.0`). */
+fun SosAlert.mapPoint(): MapPoint? = mapPointOrNull(lat, lon)
+
 /**
  * The only process-wide state owned by the alert flow.
  *
@@ -73,6 +78,9 @@ object SosAlertBus {
     val alert: StateFlow<SosAlert?> = _alert.asStateFlow()
 
     fun show(alert: SosAlert) {
+        // The same live frame may arrive twice (or the service and the map may both see
+        // it); replacing an alert with itself would restart the full-screen screen.
+        if (_alert.value?.eventId == alert.eventId) return
         _alert.value = alert
     }
 

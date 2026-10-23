@@ -13,6 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.PointIn
+import ru.family.tracker.data.hasKnownLocation
 import ru.family.tracker.data.api.ws.LiveEvent
 import ru.family.tracker.data.api.ws.LiveSocket
 import ru.family.tracker.data.api.ws.LiveUnauthorizedException
@@ -128,8 +129,15 @@ class LiveMonitor(
                             _state.update { it.copy(connected = true) }
                         }
 
-                        // SOS alerts are Task 11; the map itself has nothing to show yet.
-                        is LiveEvent.Sos -> Unit
+                        is LiveEvent.Sos -> SosAlertBus.show(
+                            SosAlert(
+                                eventId = event.eventId,
+                                childId = event.childId,
+                                lat = event.lat,
+                                lon = event.lon,
+                                createdAtIso = Instant.ofEpochMilli(event.createdAtMillis).toString(),
+                            ),
+                        )
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -231,6 +239,10 @@ class LiveMonitor(
         if (previousSeen == null || stamp > previousSeen) {
             lastSeen[childId] = stamp
         }
+
+        // The server's no-fix sentinel must not create a marker (or replace a real one
+        // with the Atlantic); it still advances the catch-up position above.
+        if (!hasKnownLocation(point.lat, point.lon)) return
 
         val current = markers[childId]
         if (current == null || stamp >= current.recordedAtMillis) {

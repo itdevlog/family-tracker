@@ -2,6 +2,7 @@ package ru.family.tracker
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -39,7 +40,13 @@ fun FamilyTrackerRoot(container: AppContainer) {
     val api = container.api
     val startRoute = remember { settings.role.route() }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // One inset owner for the whole graph, including the SOS overlay: status/navigation
+    // bars never cover the alert buttons, the notification card or any screen header.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding(),
+    ) {
         NavHost(
             navController = navController,
             startDestination = startRoute,

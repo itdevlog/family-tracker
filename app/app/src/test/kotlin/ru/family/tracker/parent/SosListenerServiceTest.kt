@@ -1,6 +1,7 @@
 package ru.family.tracker.parent
 
 import android.app.NotificationManager
+import android.app.Service
 import androidx.test.core.app.ApplicationProvider
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.flow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -100,19 +102,22 @@ class SosListenerServiceTest {
         }
         app.containerOverride = container
         manager = app.getSystemService(NotificationManager::class.java)
+        SosAlertBus.clear()
     }
 
     @After
     fun tearDown() {
+        SosAlertBus.clear()
         app.containerOverride = null
     }
 
     @Test
-    fun `foreground service turns one ntfy frame into an sos notification`() {
+    fun `foreground service turns one ntfy frame into an sos notification and alert`() {
         val controller = Robolectric.buildService(SosListenerService::class.java).create()
         val service = controller.get()
 
         assertNotNull(shadowOf(service).lastForegroundNotification)
+        assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 0))
         val channel = manager.getNotificationChannel(SosListenerService.CHANNEL_ID)
         assertNotNull(channel)
         assertEquals(NotificationManager.IMPORTANCE_LOW, channel.importance)
@@ -125,6 +130,28 @@ class SosListenerServiceTest {
         val notification = shadowOf(manager).getNotification("evt-1".hashCode())
         assertEquals("evt-1", notification.extras.getString(SosAlert.EXTRA_SOS_ID))
         assertEquals("child-1", notification.extras.getString(SosAlert.EXTRA_CHILD_ID))
+
+        settleUntil("sos alert on the bus") { SosAlertBus.alert.value?.eventId == "evt-1" }
+        val alert = SosAlertBus.alert.value!!
+        assertEquals("child-1", alert.childId)
+        assertEquals(55.71, alert.lat, 0.0)
+        assertEquals("2026-10-20T10:10:00Z", alert.createdAtIso)
+        settleUntil("marker advanced") {
+            settings.lastSosNotifiedAt == "2026-10-20T10:10:00Z"
+        }
+
+        controller.destroy()
+    }
+
+    @Test
+    fun `a service without ntfy config stops and is not sticky`() {
+        settings.ntfyConfig = null
+
+        val controller = Robolectric.buildService(SosListenerService::class.java).create()
+        val service = controller.get()
+
+        assertTrue(shadowOf(service).isStoppedBySelf)
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 0))
 
         controller.destroy()
     }

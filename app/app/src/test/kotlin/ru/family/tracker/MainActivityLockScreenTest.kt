@@ -77,6 +77,28 @@ class MainActivityLockScreenTest {
     }
 
     @Test
+    fun `an ordinary launch with a live bus alert shows over the keyguard`() {
+        SosAlertBus.show(
+            SosAlert(
+                eventId = "from-service",
+                childId = "child-1",
+                lat = 55.71,
+                lon = 37.61,
+                createdAtIso = "2026-10-20T10:10:00Z",
+            ),
+        )
+
+        val controller = Robolectric.buildActivity(MainActivity::class.java).create()
+        shadowOf(Looper.getMainLooper()).idle()
+        val activity = controller.get()
+
+        assertTrue(shadowOf(activity).getShowWhenLocked())
+        assertTrue(shadowOf(activity).getTurnScreenOn())
+
+        controller.destroy()
+    }
+
+    @Test
     fun `sos intent shows over the keyguard and clearing the alert removes it`() {
         val controller = Robolectric.buildActivity(MainActivity::class.java, sosIntent()).create()
         shadowOf(Looper.getMainLooper()).idle()

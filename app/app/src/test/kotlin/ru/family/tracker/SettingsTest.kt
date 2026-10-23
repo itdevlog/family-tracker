@@ -133,6 +133,18 @@ class SettingsTest {
     }
 
     @Test
+    fun `location error code round-trips and clears on a fix`() {
+        val settings = Settings(store)
+        assertNull(settings.locationErrorCode)
+
+        settings.locationErrorCode = 1
+        assertEquals(1, Settings(store).locationErrorCode)
+
+        settings.locationErrorCode = null
+        assertNull(Settings(store).locationErrorCode)
+    }
+
+    @Test
     fun `wizardDone round-trip`() {
         val settings = Settings(store)
         assertFalse(settings.wizardDone)

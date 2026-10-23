@@ -65,12 +65,20 @@ class TrackingService : Service() {
         }
         trackingStarted = true
 
-        val source = container.locationSourceFactory(this)
+        val source = try {
+            container.locationSourceFactory(this)
+        } catch (error: Exception) {
+            // No Play Services / provider unavailable: surface it instead of dying silently.
+            onLocationError(error)
+            stopSelf()
+            return
+        }
         locationSource = source
         source.requestUpdates(
             intervalMs = intervalFor(moving = movingState),
             highAccuracy = movingState,
             onLocation = ::onLocation,
+            onError = ::onLocationError,
         )
     }
 
@@ -89,6 +97,10 @@ class TrackingService : Service() {
 
     private fun onLocation(point: PointIn) {
         scope.launch {
+            // A fix proves the provider works again; the child UI stops showing the error.
+            if (container.settings.locationErrorCode != null) {
+                container.settings.locationErrorCode = null
+            }
             container.room.points().insert(point.toEntity())
             // Keep the last fix outside the outbox: uploads delete points, but SOS still
             // needs the most recent coordinates while tracking is online.
@@ -107,8 +119,15 @@ class TrackingService : Service() {
                 intervalMs = intervalFor(moving),
                 highAccuracy = moving,
                 onLocation = ::onLocation,
+                onError = ::onLocationError,
             )
         }
+    }
+
+    /** Persists only a coarse code; the exception class goes to the log, never coordinates. */
+    private fun onLocationError(error: Throwable) {
+        container.settings.locationErrorCode = LOCATION_ERROR_UNAVAILABLE
+        Log.w(TAG, "location unavailable: ${error.javaClass.simpleName}")
     }
 
     private fun createNotificationChannel() {
@@ -145,6 +164,9 @@ class TrackingService : Service() {
         private const val CHANNEL_ID = "tracking"
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "TrackingService"
+
+        /** The provider is unavailable (no Play Services, permission or location disabled). */
+        const val LOCATION_ERROR_UNAVAILABLE = 1
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(

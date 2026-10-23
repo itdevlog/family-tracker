@@ -191,11 +191,15 @@ private fun SosHistoryRow(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = stringResource(
-                    R.string.sos_alert_coords,
-                    String.format(Locale.US, "%.5f", event.lat),
-                    String.format(Locale.US, "%.5f", event.lon),
-                ),
+                text = if (item.locationKnown) {
+                    stringResource(
+                        R.string.sos_alert_coords,
+                        String.format(Locale.US, "%.5f", event.lat),
+                        String.format(Locale.US, "%.5f", event.lon),
+                    )
+                } else {
+                    stringResource(R.string.sos_coords_unknown)
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

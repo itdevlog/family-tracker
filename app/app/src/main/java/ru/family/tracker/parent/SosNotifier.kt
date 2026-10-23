@@ -25,8 +25,35 @@ import java.time.OffsetDateTime
  */
 class SosNotifier(private val context: Context) {
 
-    fun notify(event: SosEvent, childName: String?) {
-        createChannel()
+    /**
+     * Posts the alert. Returns false when the user blocked notifications (globally or for
+     * this channel), or when the platform refuses the post — the caller must only advance
+     * its delivery marker for a true result.
+     */
+    fun notify(event: SosEvent, childName: String?): Boolean {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) {
+            Log.w(TAG, "notifications are disabled")
+            return false
+        }
+
+        try {
+            createChannel()
+        } catch (error: Exception) {
+            Log.w(TAG, "could not create the sos channel: ${error.javaClass.simpleName}")
+            return false
+        }
+
+        val channel = try {
+            context.getSystemService(NotificationManager::class.java)
+                .getNotificationChannel(CHANNEL_ID)
+        } catch (_: Exception) {
+            null
+        }
+        if (channel?.importance == NotificationManager.IMPORTANCE_NONE) {
+            Log.w(TAG, "sos notification channel is blocked")
+            return false
+        }
 
         val name = childName?.takeIf { it.isNotBlank() }
             ?: context.getString(R.string.sos_notification_child_fallback)
@@ -46,12 +73,17 @@ class SosNotifier(private val context: Context) {
             .setFullScreenIntent(contentIntent, true)
             .build()
 
-        try {
-            NotificationManagerCompat.from(context).notify(event.eventId.hashCode(), notification)
+        return try {
+            manager.notify(event.eventId.hashCode(), notification)
+            true
         } catch (error: SecurityException) {
             // POST_NOTIFICATIONS was revoked after the service started. The listener keeps
             // running (the user may re-enable notifications); there is nothing to alert.
             Log.w(TAG, "notification permission missing", error)
+            false
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "notification post failed: ${error.javaClass.simpleName}")
+            false
         }
     }
 

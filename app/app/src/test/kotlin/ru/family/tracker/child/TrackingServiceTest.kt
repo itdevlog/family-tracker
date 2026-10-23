@@ -1,6 +1,7 @@
 package ru.family.tracker.child
 
 import android.app.NotificationManager
+import android.app.Service
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.WorkInfo
@@ -50,16 +51,19 @@ class TrackingServiceTest {
         var lastIntervalMs: Long? = null
         var lastHighAccuracy: Boolean? = null
         private var callback: ((PointIn) -> Unit)? = null
+        private var errorCallback: ((Throwable) -> Unit)? = null
 
         override fun requestUpdates(
             intervalMs: Long,
             highAccuracy: Boolean,
             onLocation: (PointIn) -> Unit,
+            onError: (Throwable) -> Unit,
         ) {
             requestCount++
             lastIntervalMs = intervalMs
             lastHighAccuracy = highAccuracy
             callback = onLocation
+            errorCallback = onError
         }
 
         override fun stop() {
@@ -68,6 +72,10 @@ class TrackingServiceTest {
 
         fun emit(point: PointIn) {
             callback?.invoke(point)
+        }
+
+        fun emitError(error: Throwable) {
+            errorCallback?.invoke(error)
         }
     }
 
@@ -107,6 +115,7 @@ class TrackingServiceTest {
         val service = controller.get()
 
         assertNotNull(shadowOf(service).lastForegroundNotification)
+        assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 0))
         assertEquals(1, fakeSource.requestCount)
         assertEquals(INTERVAL_MOVING_MS, fakeSource.lastIntervalMs)
         assertEquals(true, fakeSource.lastHighAccuracy)
@@ -143,6 +152,27 @@ class TrackingServiceTest {
 
         controller.destroy()
         assertEquals(1, fakeSource.stopCount)
+    }
+
+    @Test
+    fun `location source error is exposed to the child UI`() {
+        Robolectric.buildService(TrackingService::class.java).create()
+
+        fakeSource.emitError(IllegalStateException("no provider"))
+
+        await { settings.locationErrorCode == TrackingService.LOCATION_ERROR_UNAVAILABLE }
+        assertEquals(1, settings.locationErrorCode)
+    }
+
+    @Test
+    fun `first successful fix clears the location error`() {
+        settings.locationErrorCode = TrackingService.LOCATION_ERROR_UNAVAILABLE
+        Robolectric.buildService(TrackingService::class.java).create()
+
+        fakeSource.emit(PointIn(55.75, 37.61, recordedAtMillis = 1_700_000_000_000))
+
+        await { settings.locationErrorCode == null }
+        assertNull(settings.locationErrorCode)
     }
 
     @Test
@@ -192,6 +222,7 @@ class TrackingServiceTest {
 
         assertNull(shadowOf(service).lastForegroundNotification)
         assertTrue(shadowOf(service).isStoppedBySelf)
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 0))
         assertEquals(0, fakeSource.requestCount)
     }
 

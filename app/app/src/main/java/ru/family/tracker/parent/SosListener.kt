@@ -21,7 +21,8 @@ import java.util.logging.Logger
  * ntfy is used only as a wake-up signal: every text frame triggers `GET /sos` with the
  * persisted [Settings.lastSosNotifiedAt] marker. Events that are already acknowledged or
  * not newer than the marker are ignored, which makes duplicate messages and reconnects
- * idempotent. The marker is advanced only after the new events were handed to [sink].
+ * idempotent. The marker is advanced only for events [sink] reports as delivered; a false
+ * result stops the batch and leaves the failed event for the next wake-up.
  *
  * A failed `/sos` request is logged (class name only) and does not tear down the
  * subscription; the next message retries. A closed/broken socket is reconnected with
@@ -30,7 +31,7 @@ import java.util.logging.Logger
 class SosListener(
     private val api: ApiClient,
     private val socketFactory: () -> NtfySocket,
-    private val sink: (SosEvent) -> Unit,
+    private val sink: suspend (SosEvent) -> Boolean,
     private val settings: Settings,
     private val scope: CoroutineScope,
     private val notificationsEnabled: () -> Boolean = { true },
@@ -102,11 +103,36 @@ class SosListener(
             }
             .sortedBy { (_, createdAt) -> createdAt }
 
-        fresh.forEach { (event, _) -> sink(event) }
+        // Advance the marker per delivered event, never for a failed one. If a delivery
+        // fails, stop this batch: the next ntfy message/reconnect retries from the last
+        // event that actually reached the notification shade.
+        var lastDelivered = marker
+        var allDelivered = true
+        for ((event, createdAt) in fresh) {
+            val delivered = try {
+                sink(event)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                log.warning("sos notify failed: ${error.javaClass.simpleName}")
+                false
+            }
+            if (!delivered) {
+                allDelivered = false
+                break
+            }
+            if (lastDelivered == null || createdAt.isAfter(lastDelivered)) {
+                lastDelivered = createdAt
+            }
+        }
 
-        // Advance past every event in this answer, not only the pushed ones: an
-        // acknowledged event (or an old unacknowledged one already seen by an earlier
-        // cycle) must not keep the marker behind and cause repeated queries.
+        if (lastDelivered != marker && lastDelivered != null) {
+            settings.lastSosNotifiedAt = lastDelivered.toString()
+        }
+        if (!allDelivered) return
+
+        // All fresh events were delivered. Also advance past acknowledged/old events in
+        // this answer: they must not keep the marker behind and cause repeated queries.
         val newest = (events.mapNotNull { parseInstant(it.createdAt) } + listOfNotNull(marker))
             .maxOrNull()
         if (newest != null) settings.lastSosNotifiedAt = newest.toString()

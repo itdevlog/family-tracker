@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -39,7 +41,7 @@ class SosNotifierTest {
 
     @Test
     fun `posts high importance alarm with sos extras and a full screen intent`() {
-        SosNotifier(context).notify(event, "Маша")
+        assertTrue(SosNotifier(context).notify(event, "Маша"))
 
         val channel = manager.getNotificationChannel(SosNotifier.CHANNEL_ID)
         assertNotNull(channel)
@@ -75,8 +77,16 @@ class SosNotifierTest {
     }
 
     @Test
+    fun `notifications disabled means not delivered and nothing is posted`() {
+        shadowOf(manager).setNotificationsEnabled(false)
+
+        assertFalse(SosNotifier(context).notify(event, "Маша"))
+        assertNull(shadowOf(manager).getNotification(event.eventId.hashCode()))
+    }
+
+    @Test
     fun `unknown child name uses the fallback title`() {
-        SosNotifier(context).notify(event, null)
+        assertTrue(SosNotifier(context).notify(event, null))
 
         val notification = shadowOf(manager).getNotification(event.eventId.hashCode())
         assertEquals(

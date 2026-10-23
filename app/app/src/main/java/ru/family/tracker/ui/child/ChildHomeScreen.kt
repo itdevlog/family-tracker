@@ -114,6 +114,7 @@ fun ChildHomeScreen(
                         errorCode = settings.lastUploadErrorCode,
                         online = isNetworkOnline(context),
                         nowMillis = System.currentTimeMillis(),
+                        locationErrorCode = settings.locationErrorCode,
                     )
                 }
                 delay(UPLOAD_STATUS_REFRESH_MS)
@@ -251,6 +252,15 @@ fun ChildHomeScreen(
             Text(
                 text = stringResource(R.string.child_sos_no_location),
                 style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        if (uploadStatus?.let { isLocationUnavailable(it.locationErrorCode) } == true) {
+            Text(
+                text = stringResource(R.string.child_location_unavailable),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
             )
         }

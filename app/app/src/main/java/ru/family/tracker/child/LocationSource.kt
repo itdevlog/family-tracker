@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import android.os.Looper
+import android.util.Log
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -17,7 +18,12 @@ import ru.family.tracker.data.api.PointIn
  * Robolectric tests inject a fake so no Play Services are required.
  */
 interface LocationSource {
-    fun requestUpdates(intervalMs: Long, highAccuracy: Boolean, onLocation: (PointIn) -> Unit)
+    fun requestUpdates(
+        intervalMs: Long,
+        highAccuracy: Boolean,
+        onLocation: (PointIn) -> Unit,
+        onError: (Throwable) -> Unit = {},
+    )
 
     fun stop()
 }
@@ -38,6 +44,7 @@ class FusedLocationSource(context: Context) : LocationSource {
         intervalMs: Long,
         highAccuracy: Boolean,
         onLocation: (PointIn) -> Unit,
+        onError: (Throwable) -> Unit,
     ) {
         removeCurrentCallback()
 
@@ -59,11 +66,29 @@ class FusedLocationSource(context: Context) : LocationSource {
 
         try {
             client.requestLocationUpdates(request, fresh, Looper.getMainLooper())
-        } catch (_: SecurityException) {
-            // Permission was revoked after the service started: stay alive without updates,
-            // the UI still lets the user re-grant it.
-            callback = null
+                .addOnFailureListener { error -> fail(fresh, onError, error) }
+        } catch (error: SecurityException) {
+            // Permission was revoked after the service started: stay alive without
+            // updates, the UI still lets the user re-grant it.
+            fail(fresh, onError, error)
+        } catch (error: IllegalStateException) {
+            // No Play Services / location disabled on this device.
+            fail(fresh, onError, error)
+        } catch (error: Exception) {
+            // Last-resort guard: a thrown registration must not crash the service.
+            fail(fresh, onError, error)
         }
+    }
+
+    /** Reports a provider failure without ever logging coordinates. */
+    private fun fail(
+        registration: LocationCallback,
+        onError: (Throwable) -> Unit,
+        error: Throwable,
+    ) {
+        if (callback === registration) callback = null
+        Log.w(TAG, "location updates failed: ${error.javaClass.simpleName}")
+        onError(error)
     }
 
     override fun stop() {
@@ -88,4 +113,8 @@ class FusedLocationSource(context: Context) : LocationSource {
         speed = if (hasSpeed()) speed else null,
         recordedAtMillis = time,
     )
+
+    private companion object {
+        const val TAG = "FusedLocationSource"
+    }
 }

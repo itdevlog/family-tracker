@@ -42,6 +42,7 @@ import ru.family.tracker.R
 import ru.family.tracker.Settings
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ws.KtorLiveSocket
+import ru.family.tracker.data.hasKnownLocation
 import ru.family.tracker.parent.ChildMarker
 import ru.family.tracker.parent.LiveMonitor
 import ru.family.tracker.parent.SeedState
@@ -216,7 +217,8 @@ private fun ParentMap(
         update = { view ->
             syncMarkers(view, markers) { childId -> currentOnChildClick(childId) }
 
-            val first = markers.firstOrNull()
+            // Even if a stale state carried a sentinel, never centre on 0,0.
+            val first = markers.firstOrNull { hasKnownLocation(it.lat, it.lon) }
             if (first != null && centeredOnChild == null) {
                 centeredOnChild = first.childId
                 view.controller.animateTo(GeoPoint(first.lat, first.lon))
@@ -249,7 +251,7 @@ private fun syncMarkers(
     onChildClick: (String) -> Unit,
 ) {
     map.overlays.removeAll { it is Marker }
-    markers.forEach { child ->
+    markers.filter { hasKnownLocation(it.lat, it.lon) }.forEach { child ->
         val marker = Marker(map).apply {
             position = GeoPoint(child.lat, child.lon)
             title = child.name

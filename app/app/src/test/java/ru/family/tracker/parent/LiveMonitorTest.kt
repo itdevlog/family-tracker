@@ -23,6 +23,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.PointIn
@@ -51,6 +53,9 @@ class LiveMonitorTest {
     @Volatile
     private var historyResponder: (HttpRequestData) -> List<PointIn> = { emptyList() }
 
+    @Volatile
+    private var devicesBody = DEVICES_ONE_CHILD
+
     private val engine = MockEngine { request ->
         requests += request
         when (request.url.encodedPath) {
@@ -65,7 +70,7 @@ class LiveMonitorTest {
                         ),
                     )
                 } else {
-                    respondJson(DEVICES_ONE_CHILD)
+                    respondJson(devicesBody)
                 }
             }
 
@@ -84,6 +89,19 @@ class LiveMonitorTest {
     }
 
     private val api = ApiClient({ BASE_URL }, { TOKEN }, engine)
+
+    @Before
+    fun clearAlertBus() {
+        SosAlertBus.clear()
+        deviceFailuresRemaining.set(0)
+        devicesBody = DEVICES_ONE_CHILD
+        historyResponder = { emptyList() }
+    }
+
+    @After
+    fun tearDownAlertBus() {
+        SosAlertBus.clear()
+    }
 
     private fun MockRequestHandleScope.respondJson(
         body: String,
@@ -426,6 +444,72 @@ class LiveMonitorTest {
         assertNull(parseLiveEvent("""{"type":"sos","child":"x"}"""))
     }
 
+    @Test
+    fun `zero coordinates do not create a marker but a known fix does`() =
+        runTest(UnconfinedTestDispatcher()) {
+            devicesBody = DEVICES_NO_LOCATION
+            val sockets = FakeSocketFactory()
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = sockets::newSocket,
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("seed and socket") {
+                sockets.sockets.size == 1 && monitor.state.value.seedState == SeedState.READY
+            }
+
+            sockets.current.send(location(0.0, 0.0, "2026-10-20T10:05:00Z"))
+            runCurrent()
+            assertTrue(monitor.state.value.markers.isEmpty())
+
+            sockets.current.send(location(55.71, 37.61, "2026-10-20T10:06:00Z"))
+            settleUntil("known marker") {
+                monitor.state.value.markers.singleOrNull()?.lat == 55.71
+            }
+
+            assertEquals(1, monitor.state.value.markers.size)
+            monitor.stop()
+        }
+
+    @Test
+    fun `sos frame raises the alert bus and repeated frames do not replace it`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val sockets = FakeSocketFactory()
+            val monitor = LiveMonitor(
+                api = api,
+                socketFactory = sockets::newSocket,
+                scope = this,
+                clock = { NOW },
+            )
+
+            monitor.start()
+            settleUntil("first socket") { sockets.sockets.size == 1 }
+
+            val sos = LiveEvent.Sos(
+                eventId = "sos-1",
+                childId = "child-1",
+                lat = 55.71,
+                lon = 37.61,
+                createdAtMillis = Instant.parse("2026-10-20T10:10:00Z").toEpochMilli(),
+            )
+            sockets.current.send(sos)
+            settleUntil("alert published") { SosAlertBus.alert.value?.eventId == "sos-1" }
+
+            val alert = SosAlertBus.alert.value!!
+            assertEquals("child-1", alert.childId)
+            assertEquals(55.71, alert.lat, 0.0)
+            assertEquals("2026-10-20T10:10:00Z", alert.createdAtIso)
+
+            sockets.current.send(sos)
+            runCurrent()
+            assertEquals(alert, SosAlertBus.alert.value)
+
+            monitor.stop()
+        }
+
     /**
      * Ktor's MockEngine still hops to a real dispatcher, so `advanceUntilIdle` alone would
      * not wait for a background request (and virtual time would trip HttpTimeout). This
@@ -495,6 +579,10 @@ class LiveMonitorTest {
         val DEVICES_ONE_CHILD = """
             [{"device_id":"child-1","name":"Маша",
               "last_location":{"lat":55.70,"lon":37.60,"recorded_at":"2026-10-20T10:00:00Z"}}]
+        """.trimIndent()
+
+        val DEVICES_NO_LOCATION = """
+            [{"device_id":"child-1","name":"Маша","last_location":null}]
         """.trimIndent()
     }
 }

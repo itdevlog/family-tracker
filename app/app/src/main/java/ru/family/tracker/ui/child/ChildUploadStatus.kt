@@ -3,6 +3,7 @@ package ru.family.tracker.ui.child
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import ru.family.tracker.child.TrackingService
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -14,9 +15,14 @@ internal data class UploadStatusSnapshot(
     val errorCode: Int?,
     val online: Boolean,
     val nowMillis: Long,
+    val locationErrorCode: Int? = null,
 )
 
 internal enum class UploadStatusKind { ONLINE, OFFLINE, NEVER, OFFLINE_NEVER, REJECTED }
+
+/** True while the location provider reports a failure; cleared by the first fix. */
+internal fun isLocationUnavailable(code: Int?): Boolean =
+    code == TrackingService.LOCATION_ERROR_UNAVAILABLE
 
 /**
  * A rejected token wins over connectivity and timestamps: an online network with a revoked

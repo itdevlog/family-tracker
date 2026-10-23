@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import ru.family.tracker.R
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.SosEvent
+import ru.family.tracker.data.hasKnownLocation
 import java.time.DateTimeException
 import java.time.OffsetDateTime
 
@@ -25,7 +26,11 @@ import java.time.OffsetDateTime
 data class SosHistoryItem(
     val event: SosEvent,
     val childName: String?,
-)
+) {
+    /** False for the server's `0.0/0.0` "no fix" sentinel. */
+    val locationKnown: Boolean
+        get() = hasKnownLocation(event.lat, event.lon)
+}
 
 data class SosHistoryState(
     val loading: Boolean = false,

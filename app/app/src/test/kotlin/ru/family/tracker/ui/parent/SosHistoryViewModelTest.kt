@@ -16,8 +16,10 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.family.tracker.R
 import ru.family.tracker.data.api.ApiClient
@@ -35,13 +37,16 @@ class SosHistoryViewModelTest {
     @Volatile
     private var failAck = false
 
+    @Volatile
+    private var eventsBody = EVENTS
+
     private val engine = MockEngine { request ->
         requests += request
         when (request.url.encodedPath) {
             "/sos" -> if (failSos) {
                 respond("""{"error":"boom"}""", HttpStatusCode.InternalServerError, jsonHeaders())
             } else {
-                respond(EVENTS, HttpStatusCode.OK, jsonHeaders())
+                respond(eventsBody, HttpStatusCode.OK, jsonHeaders())
             }
 
             "/devices" -> respond(DEVICES, HttpStatusCode.OK, jsonHeaders())
@@ -82,7 +87,18 @@ class SosHistoryViewModelTest {
         assertEquals("Маша", state.items[0].childName)
         assertEquals("Маша", state.items[1].childName)
         assertEquals("2026-10-20T10:10:00Z", state.items[0].event.createdAt)
+        assertTrue(state.items.all { it.locationKnown })
         assertNull(state.error)
+    }
+
+    @Test
+    fun `unknown coordinates are marked as such in the feed`() = historyTest {
+        eventsBody = UNKNOWN_EVENTS
+        val viewModel = viewModel()
+        val state = viewModel.state.first { !it.loading && it.items.isNotEmpty() }
+
+        assertEquals("unknown", state.items.single().event.eventId)
+        assertFalse(state.items.single().locationKnown)
     }
 
     @Test
@@ -145,6 +161,19 @@ class SosHistoryViewModelTest {
                 "child": "child-1",
                 "lat": 55.71,
                 "lon": 37.61,
+                "created_at": "2026-10-20T10:10:00Z",
+                "acknowledged": false
+              }
+            ]
+        """.trimIndent()
+
+        val UNKNOWN_EVENTS = """
+            [
+              {
+                "event_id": "unknown",
+                "child": "child-1",
+                "lat": 0.0,
+                "lon": 0.0,
                 "created_at": "2026-10-20T10:10:00Z",
                 "acknowledged": false
               }

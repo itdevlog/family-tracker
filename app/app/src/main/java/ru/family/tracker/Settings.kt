@@ -96,6 +96,14 @@ class Settings(private val store: KeyValueStore) {
      * The `points` table is drained/emptied by uploads, so it cannot answer "where is the
      * child right now" — the SOS button needs this value even while online.
      */
+    /**
+     * Last location-provider failure code (1 = unavailable), shown on the child home.
+     * Cleared by the first successful fix; no coordinates are stored here.
+     */
+    var locationErrorCode: Int?
+        get() = store.getString(KEY_LOCATION_ERROR)?.toIntOrNull()
+        set(value) = store.putString(KEY_LOCATION_ERROR, value?.toString())
+
     var lastPoint: PointIn?
         get() = store.getString(KEY_LAST_POINT)?.let { stored ->
             runCatching { json.decodeFromString<PointIn>(stored) }.getOrNull()
@@ -119,6 +127,7 @@ class Settings(private val store: KeyValueStore) {
         private const val KEY_LAST_UPLOAD_AT = "last_upload_at"
         private const val KEY_LAST_UPLOAD_ERROR = "last_upload_error"
         private const val KEY_LAST_SOS_DROP_ERROR = "last_sos_drop_error"
+        private const val KEY_LOCATION_ERROR = "location_error"
         private const val KEY_LAST_POINT = "last_point"
         private const val KEY_LAST_SOS_NOTIFIED_AT = "last_sos_notified_at"
 

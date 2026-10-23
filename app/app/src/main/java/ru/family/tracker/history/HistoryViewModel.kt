@@ -19,6 +19,7 @@ import ru.family.tracker.R
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.data.api.ApiException
 import ru.family.tracker.data.api.PointIn
+import ru.family.tracker.data.hasKnownLocation
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
@@ -119,7 +120,10 @@ class HistoryViewModel(
                 val from = requestedDate.atStartOfDay(zone).toInstant().toString()
                 val to = requestedDate.plusDays(1).atStartOfDay(zone)
                     .toInstant().minusMillis(1).toString()
+                // 0,0 is the server's "no fix" sentinel; it must not become a marker,
+                // a polyline vertex or a camera target.
                 val points = api.history(deviceId, from, to)
+                    .filter { hasKnownLocation(it.lat, it.lon) }
 
                 // A cancelled coroutine can still finish a blocking call; the date and
                 // generation checks make a stale answer harmless even then.

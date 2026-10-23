@@ -48,6 +48,7 @@ import org.osmdroid.views.overlay.Marker
 import ru.family.tracker.R
 import ru.family.tracker.data.api.ApiClient
 import ru.family.tracker.parent.SosAlert
+import ru.family.tracker.parent.mapPoint
 import java.text.SimpleDateFormat
 import java.time.OffsetDateTime
 import java.util.Date
@@ -153,25 +154,33 @@ private fun SosAlertContent(
             color = Color.White,
             fontSize = 16.sp,
         )
+        val mapPoint = alert.mapPoint()
         Text(
-            text = stringResource(
-                R.string.sos_alert_coords,
-                String.format(Locale.US, "%.5f", alert.lat),
-                String.format(Locale.US, "%.5f", alert.lon),
-            ),
+            text = if (mapPoint == null) {
+                stringResource(R.string.sos_coords_unknown)
+            } else {
+                stringResource(
+                    R.string.sos_alert_coords,
+                    String.format(Locale.US, "%.5f", mapPoint.lat),
+                    String.format(Locale.US, "%.5f", mapPoint.lon),
+                )
+            },
             color = Color.White,
             fontSize = 14.sp,
         )
 
-        SosMiniMap(
-            lat = alert.lat,
-            lon = alert.lon,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(vertical = 8.dp)
-                .clip(RoundedCornerShape(16.dp)),
-        )
+        // A 0,0 sentinel must not become a marker or move the camera to the Atlantic.
+        if (mapPoint != null) {
+            SosMiniMap(
+                lat = mapPoint.lat,
+                lon = mapPoint.lon,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(vertical = 8.dp)
+                    .clip(RoundedCornerShape(16.dp)),
+            )
+        }
 
         if (ackFailed) {
             Text(

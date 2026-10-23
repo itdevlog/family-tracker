@@ -73,14 +73,30 @@ class SosListenerService : Service() {
         }
         started = true
 
+        // One `/devices` request per service start; notification delivery must not wait
+        // for (or repeat) a network call on every SOS.
+        scope.launch { loadDeviceNames() }
+
         val sosListener = SosListener(
             api = container.api,
             socketFactory = { container.ntfySocketFactory(config) },
             sink = { event ->
-                scope.launch {
-                    SosNotifier(this@SosListenerService)
-                        .notify(event, resolveChildName(event.child))
+                // Called synchronously on the listener coroutine: the marker may only
+                // advance after the notification was actually posted.
+                val delivered = SosNotifier(this@SosListenerService)
+                    .notify(event, cachedChildName(event.child))
+                if (delivered) {
+                    SosAlertBus.show(
+                        SosAlert(
+                            eventId = event.eventId,
+                            childId = event.child,
+                            lat = event.lat,
+                            lon = event.lon,
+                            createdAtIso = event.createdAt,
+                        ),
+                    )
                 }
+                delivered
             },
             settings = settings,
             scope = scope,
@@ -106,27 +122,28 @@ class SosListenerService : Service() {
     }
 
     /**
-     * Resolves a child UUID to a name for the notification title. Cached for the service
-     * lifetime; a failed `/devices` request is not fatal and falls back to "ребёнок".
+     * Fills the service-lifetime name cache once at start. A failed `/devices` request is
+     * not fatal: the notification falls back to the generic "ребёнок" title.
      */
-    private suspend fun resolveChildName(childId: String): String? {
-        synchronized(nameCache) { nameCache[childId] }?.let { return it }
-
+    private suspend fun loadDeviceNames() {
         val devices = try {
             container.api.devices()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             // No token/coordinates in the log line.
-            Log.w(TAG, "could not resolve child name: ${error.javaClass.simpleName}")
-            return null
+            Log.w(TAG, "could not resolve child names: ${error.javaClass.simpleName}")
+            return
         }
 
         synchronized(nameCache) {
             devices.forEach { device -> nameCache[device.deviceId] = device.name }
-            return nameCache[childId]
         }
     }
+
+    /** Cache-only lookup: notification delivery never performs network I/O. */
+    private fun cachedChildName(childId: String): String? =
+        synchronized(nameCache) { nameCache[childId] }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(

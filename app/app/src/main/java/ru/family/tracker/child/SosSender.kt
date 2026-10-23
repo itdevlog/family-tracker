@@ -73,10 +73,12 @@ class SosSender(
                 throw cancellation
             } catch (error: ApiException) {
                 if (error.status in DROP_STATUSES) {
+                    // Mark the drop before deleting the row: if the process dies between
+                    // the two writes, a missing row without the marker would look SENT.
+                    settings.lastSosDropErrorCode = error.status
                     dao.delete(listOf(event.id))
                     // The queue is drained, but the parent never got this alert. Keep the
                     // code so the child UI can say "rejected" instead of "sent".
-                    settings.lastSosDropErrorCode = error.status
                     dropped = true
                     Log.w(TAG, "Dropped an SOS event rejected with HTTP ${error.status}")
                 } else {
