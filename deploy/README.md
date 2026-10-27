@@ -10,7 +10,7 @@
 
 `api.<домен>` → `ktor:8080`, `ntfy.<домен>` → `ntfy:8585`.
 
-Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager). Для управления стеком из Portainer есть готовый `compose.portainer.yml` и раздел [«Portainer»](#portainer).
+Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager). Для управления стеком из Portainer есть готовый `compose.portainer.yml` в корне репозитория и раздел [«Portainer»](#portainer).
 
 ## Требования
 
@@ -229,7 +229,7 @@ curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
 
 ## Portainer
 
-Если стеком управляет Portainer, используйте готовый `compose.portainer.yml`: он содержит только `ktor` и `ntfy`, без Caddy, и публикует их на LAN-IP для NPM.
+Если стеком управляет Portainer, используйте готовый `compose.portainer.yml` **в корне репозитория**: он содержит только `ktor` и `ntfy`, без Caddy, и публикует их на LAN-IP для NPM.
 
 ### Создание стека
 
@@ -240,7 +240,7 @@ curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
 | Name | `family-tracker` |
 | Repository URL | `https://github.com/itdevlog/family-tracker` |
 | Repository reference | `refs/heads/master` |
-| Compose path | `deploy/compose.portainer.yml` |
+| Compose path | `compose.portainer.yml` |
 | Authentication | включить, если репозиторий private |
 
 Для private-репозитория нужен GitHub Personal Access Token с правом чтения репозитория; в поле пароля укажите токен, в поле пользователя — `itdevlog`.
@@ -259,7 +259,15 @@ BIND_ADDRESS=192.168.1.10
 
 Нажмите **Deploy the stack**. Portainer склонирует репозиторий, соберёт образ `ktor` из `server/` и запустит оба сервиса.
 
-> Не создавайте этот стек через **Web editor**: `build: ../server` требует исходников репозитория рядом с compose-файлом. Web editor подходит только если вы заранее собрали образ и заменили `build` на `image`.
+Стек намеренно лежит в корне репозитория: в Portainer относительные пути надёжно считаются от корня, поэтому `build: ./server` не зависит от того, как Portainer трактует каталог compose-файла. Конфиг ntfy задан переменными `NTFY_*`, без bind-mount `server.yml`, — это убирает ошибку вида:
+
+```text
+read /etc/ntfy/server.yml: is a directory
+```
+
+Если такая ошибка уже появилась, значит стек собран из старого файла `deploy/compose.portainer.yml` или через Web editor без файлов репозитория. Измените Compose path на `compose.portainer.yml` и переразверните стек; volumes с данными сохранятся.
+
+> Не создавайте этот стек через **Web editor**: `build: ./server` требует исходников репозитория рядом с compose-файлом. Web editor подходит только если вы заранее собрали образ и заменили `build` на `image`.
 
 ### Пользователь и токен ntfy в Portainer
 
@@ -289,10 +297,10 @@ cd family-tracker
 docker build -t family-tracker-server:local server
 ```
 
-В Portainer создайте стек через **Web editor** на основе `compose.portainer.yml`, заменив:
+В Portainer создайте стек через **Web editor** на основе корневого `compose.portainer.yml`, заменив:
 
 ```yaml
-build: ../server
+build: ./server
 ```
 
 на:
