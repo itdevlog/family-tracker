@@ -1,0 +1,21 @@
+# Альтернатива Caddy: Nginx Proxy Manager (NPM).
+#
+# Использование:
+#   docker compose -f docker-compose.yml -f compose.npm.yml up -d --build
+#
+# Caddy получает профиль и не запускается, а ktor/ntfy публикуются
+# на BIND_ADDRESS (LAN-IP сервера), чтобы до них достал NPM.
+# Порт 8080/8585 не пробрасывайте на роутере.
+
+services:
+  caddy:
+    profiles:
+      - caddy
+
+  ktor:
+    ports:
+      - "${BIND_ADDRESS:?set BIND_ADDRESS in deploy/.env}:8080:8080"
+
+  ntfy:
+    ports:
+      - "${BIND_ADDRESS:?set BIND_ADDRESS in deploy/.env}:8585:8585"

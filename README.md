@@ -74,6 +74,8 @@ Caddy автоматически выпускает TLS-сертификаты. 
 
 Подробно: [deploy/README.md](deploy/README.md) — DNS, ntfy-пользователи и ACL, проверка токена, бэкап, восстановление, обновление, сброс семьи.
 
+Если в сети уже есть Nginx Proxy Manager, Caddy можно не запускать — готовый override и настройка NPM описаны в разделе [«Вместо Caddy: Nginx Proxy Manager»](deploy/README.md#вместо-caddy-nginx-proxy-manager).
+
 Локальные тесты сервера:
 
 ```bash

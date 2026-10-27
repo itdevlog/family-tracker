@@ -10,6 +10,8 @@
 
 `api.<домен>` → `ktor:8080`, `ntfy.<домен>` → `ntfy:8585`.
 
+Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager).
+
 ## Требования
 
 - Debian 12 (или другой Linux) с Docker Engine и плагином `docker compose` (Compose ≥ 2.24.4 — нужен тег `!override` в локальном override).
@@ -125,6 +127,105 @@ docker compose ps                          # у всех сервисов State:
 ```
 
 Если Caddy не получает сертификат, смотрите `docker compose logs caddy`: чаще всего это DNS или закрытый 80/443.
+
+## Вместо Caddy: Nginx Proxy Manager
+
+Если в локальной сети уже есть NPM, он может выпускать сертификаты и проксировать запросы. Caddy в этом варианте **не запускается**: порты 80/443 остаются за NPM.
+
+Схема:
+
+```text
+Интернет → NPM :443 (TLS)
+              ├─ api.<домен>  → <LAN-IP>:8080
+              └─ ntfy.<домен> → <LAN-IP>:8585
+```
+
+DNS-записи `api.<домен>` и `ntfy.<домен>` должны указывать на IP NPM, а не на этот сервер.
+
+### Запуск
+
+Добавьте в `deploy/.env` LAN-адрес сервера, на котором работают контейнеры:
+
+```env
+BIND_ADDRESS=192.168.1.10
+```
+
+Не используйте `0.0.0.0`, если у сервера есть публичный IP: порты 8080/8585 должны быть доступны только из локальной сети. Docker публикует порты в обход UFW, поэтому привязка к LAN-IP здесь важнее правил файрвола.
+
+Запуск с override-файлом:
+
+```bash
+docker compose -f docker-compose.yml -f compose.npm.yml up -d --build
+docker compose -f docker-compose.yml -f compose.npm.yml ps
+```
+
+В `compose.npm.yml` сервис Caddy переведён в профиль `caddy`, поэтому при обычном `up` он пропускается. Проверить конфигурацию без запуска:
+
+```bash
+docker compose -f docker-compose.yml -f compose.npm.yml config
+```
+
+### Настройка NPM
+
+Для каждого домена: **Hosts → Proxy Hosts → Add Proxy Host**.
+
+| Поле | `api.<домен>` | `ntfy.<домен>` |
+| --- | --- | --- |
+| Scheme | `http` | `http` |
+| Forward Hostname / IP | LAN-IP сервера | LAN-IP сервера |
+| Forward Port | `8080` | `8585` |
+| Websockets Support | включить | включить |
+| Block Common Exploits | можно включить | можно включить |
+| SSL | Request a new certificate, Force SSL | Request a new certificate, Force SSL |
+
+В **Advanced** у обоих хостов:
+
+```nginx
+client_max_body_size 256k;
+proxy_read_timeout 3600s;
+proxy_send_timeout 3600s;
+```
+
+Для `ntfy.<домен>` дополнительно:
+
+```nginx
+proxy_buffering off;
+```
+
+Почему это нужно:
+
+- `client_max_body_size 256k` заменяет лимит тела, который в проекте делает Caddy. В Ktor 3.0.1 собственного лимита нет.
+- Долгий `proxy_read_timeout` нужен для WebSocket `/live` и ntfy `/ws`.
+- `proxy_buffering off` не задерживает поток ntfy в nginx.
+
+### Проверка
+
+```bash
+curl https://api.<домен>/health
+# ok
+
+curl https://ntfy.<домен>/v1/health
+# {"healthy":true}
+```
+
+Проверка `NTFY_TOKEN` из `.env` — публикацией и чтением, как в разделе [«Проверка самого NTFY_TOKEN»](#проверка-самого-ntfy_token):
+
+```bash
+set -a; . ./.env; set +a
+
+curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
+  -d "healthcheck" "https://$NTFY_DOMAIN/family-healthcheck"
+
+curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
+  "https://$NTFY_DOMAIN/family-healthcheck/json?poll=1"
+```
+
+### Ограничения
+
+- NPM должен добавлять `X-Forwarded-For` (он делает это по умолчанию). Ktor берёт правый хоп заголовка для rate limit привязки. Если перед NPM стоит Cloudflare, справа окажется IP Cloudflare, и лимит станет общим для всех клиентов — нужен real-IP или отказ от CDN.
+- Приложение принимает только доверенный HTTPS. Самоподписанный сертификат NPM не подойдёт без установки CA на телефоны.
+- Если NPM работает в контейнере на том же хосте, указывайте LAN-IP хоста, а не `127.0.0.1`. Если NPM установлен на хосте напрямую, `127.0.0.1` тоже подойдёт.
+- Не пробрасывайте 8080/8585 на роутере и не публикуйте их в интернет.
 
 ## Установка APK
 
