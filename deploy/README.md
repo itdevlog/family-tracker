@@ -10,7 +10,7 @@
 
 `api.<домен>` → `ktor:8080`, `ntfy.<домен>` → `ntfy:8585`.
 
-Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager).
+Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager). Для управления стеком из Portainer есть готовый `compose.portainer.yml` и раздел [«Portainer»](#portainer).
 
 ## Требования
 
@@ -226,6 +226,86 @@ curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
 - Приложение принимает только доверенный HTTPS. Самоподписанный сертификат NPM не подойдёт без установки CA на телефоны.
 - Если NPM работает в контейнере на том же хосте, указывайте LAN-IP хоста, а не `127.0.0.1`. Если NPM установлен на хосте напрямую, `127.0.0.1` тоже подойдёт.
 - Не пробрасывайте 8080/8585 на роутере и не публикуйте их в интернет.
+
+## Portainer
+
+Если стеком управляет Portainer, используйте готовый `compose.portainer.yml`: он содержит только `ktor` и `ntfy`, без Caddy, и публикует их на LAN-IP для NPM.
+
+### Создание стека
+
+**Stacks → Add stack → Repository**:
+
+| Поле | Значение |
+| --- | --- |
+| Name | `family-tracker` |
+| Repository URL | `https://github.com/itdevlog/family-tracker` |
+| Repository reference | `refs/heads/master` |
+| Compose path | `deploy/compose.portainer.yml` |
+| Authentication | включить, если репозиторий private |
+
+Для private-репозитория нужен GitHub Personal Access Token с правом чтения репозитория; в поле пароля укажите токен, в поле пользователя — `itdevlog`.
+
+Имя стека должно быть `family-tracker`: от него зависят имена volume'ов (`family-tracker_tracker_data`, `family-tracker_ntfy_lib`), которые используются в командах бэкапа.
+
+В разделе **Environment variables** добавьте:
+
+```env
+NTFY_DOMAIN=ntfy.example.com
+NTFY_TOKEN=tk_placeholder
+BIND_ADDRESS=192.168.1.10
+```
+
+`BIND_ADDRESS` — LAN-IP хоста, где Portainer запускает контейнеры. Не указывайте `0.0.0.0`, если у хоста есть публичный IP.
+
+Нажмите **Deploy the stack**. Portainer склонирует репозиторий, соберёт образ `ktor` из `server/` и запустит оба сервиса.
+
+> Не создавайте этот стек через **Web editor**: `build: ../server` требует исходников репозитория рядом с compose-файлом. Web editor подходит только если вы заранее собрали образ и заменили `build` на `image`.
+
+### Пользователь и токен ntfy в Portainer
+
+Стек уже запущен с заглушкой `NTFY_TOKEN`, поэтому создайте пользователя через консоль контейнера:
+
+**Containers → ntfy → Console → `/bin/sh`**:
+
+```bash
+ntfy user add --role=user tracker
+ntfy access tracker 'family-*' read-write
+ntfy token add --label=family-tracker tracker
+```
+
+Скопируйте `tk_...`, вернитесь в **Stacks → family-tracker → Editor** и замените `NTFY_TOKEN` на настоящий. Нажмите **Update the stack** с включённым **Re-pull image and redeploy** (или просто redeploy — образ ktor пересоберётся при изменении переменных).
+
+### NPM
+
+Настройка NPM не меняется: оба Proxy Host указывают на `BIND_ADDRESS`, порты `8080` и `8585`, WebSockets включены. См. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager).
+
+### Если Portainer не собирает образ
+
+Некоторые версии Portainer не поддерживают `build` в Git-стеке. Тогда соберите образ на хосте:
+
+```bash
+git clone https://github.com/itdevlog/family-tracker.git
+cd family-tracker
+docker build -t family-tracker-server:local server
+```
+
+В Portainer создайте стек через **Web editor** на основе `compose.portainer.yml`, заменив:
+
+```yaml
+build: ../server
+```
+
+на:
+
+```yaml
+image: family-tracker-server:local
+```
+
+Образ должен быть собран на том же Docker-хосте, которым управляет Portainer.
+
+### Обновление
+
+**Stacks → family-tracker → Pull and redeploy**. Перед обновлением сделайте бэкап volume'ов по разделу [«Бэкап»](#бэкап).
 
 ## Установка APK
 

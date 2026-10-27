@@ -1,0 +1,48 @@
+# Стек для Portainer + Nginx Proxy Manager.
+#
+# Portainer → Stacks → Add stack → Repository:
+#   Repository URL:   https://github.com/itdevlog/family-tracker
+#   Reference:        refs/heads/master
+#   Compose path:     deploy/compose.portainer.yml
+#
+# Переменные стека:
+#   NTFY_DOMAIN, NTFY_TOKEN, BIND_ADDRESS
+#
+# Caddy не входит в стек: TLS и ingress делает NPM.
+# Порты 8080/8585 публикуются только на LAN-IP из BIND_ADDRESS.
+
+name: family-tracker
+
+services:
+  ktor:
+    build: ../server
+    restart: unless-stopped
+    environment:
+      DB_PATH: /data/tracker.db
+      NTFY_URL: http://ntfy:8585
+      NTFY_PUBLIC_URL: https://${NTFY_DOMAIN:?set NTFY_DOMAIN in the stack environment}
+      NTFY_TOKEN: ${NTFY_TOKEN:?set NTFY_TOKEN in the stack environment}
+    volumes:
+      - tracker_data:/data
+    ports:
+      - "${BIND_ADDRESS:?set BIND_ADDRESS in the stack environment}:8080:8080"
+    depends_on:
+      - ntfy
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    restart: unless-stopped
+    command: serve --config /etc/ntfy/server.yml
+    environment:
+      NTFY_BASE_URL: https://${NTFY_DOMAIN:?set NTFY_DOMAIN in the stack environment}
+    volumes:
+      - ./ntfy/config.yml:/etc/ntfy/server.yml:ro
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_lib:/var/lib/ntfy
+    ports:
+      - "${BIND_ADDRESS:?set BIND_ADDRESS in the stack environment}:8585:8585"
+
+volumes:
+  tracker_data:
+  ntfy_cache:
+  ntfy_lib:
