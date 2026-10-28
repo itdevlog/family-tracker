@@ -2,7 +2,7 @@ name: family-tracker
 
 services:
   caddy:
-    image: caddy:2.8
+    image: caddy:2.10
     restart: unless-stopped
     ports:
       - "80:80"

@@ -15,6 +15,7 @@ Caddy можно заменить на Nginx Proxy Manager (NPM), если он 
 ## Требования
 
 - Debian 12 (или другой Linux) с Docker Engine и плагином `docker compose` (Compose ≥ 2.24.4 — нужен тег `!override` в локальном override).
+- Caddy **2.10+** — и контейнер, и системный: директива `request_body` появилась в Caddy 2.10. В Docker-варианте нужная версия уже закреплена в `docker-compose.yml`.
 - DNS: A/AAAA-записи `api.<домен>` и `ntfy.<домен>` указывают на сервер. Если домен за CDN-прокси, убедитесь, что ACME-валидация проходит.
 - Открыты порты `80/tcp`, `443/tcp`, `443/udp` (HTTP-01/HTTPS-01 и HTTP/3). Для Let's Encrypt нужен доступ из интернета.
 - Свободные имена `api`/`ntfy` в DNS и валидный e-mail для ACME.
@@ -245,6 +246,19 @@ curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
 systemctl status caddy --no-pager
 caddy version
 docker compose version
+```
+
+Нужен Caddy **2.10+**: директива `request_body` появилась только в 2.10. Если версия старше, обновите Caddy из официального репозитория:
+
+```bash
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install --only-upgrade caddy
+caddy version
 ```
 
 Caddy из apt обычно читает `/etc/caddy/Caddyfile`. Если Caddy запущен в контейнере, команды отличаются — см. примечание в конце раздела.
