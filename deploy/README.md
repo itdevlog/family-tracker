@@ -10,7 +10,7 @@
 
 `api.<домен>` → `ktor:8080`, `ntfy.<домен>` → `ntfy:8585`.
 
-Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager). Для управления стеком из Portainer есть готовый `compose.portainer.yml` в корне репозитория и раздел [«Portainer»](#portainer).
+Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager). Если Caddy уже установлен на хосте, используйте `compose.host-caddy.yml` и раздел [«Caddy уже установлен на хосте»](#caddy-уже-установлен-на-хосте). Для управления стеком из Portainer есть готовый `compose.portainer.yml` в корне репозитория и раздел [«Portainer»](#portainer).
 
 ## Требования
 
@@ -226,6 +226,144 @@ curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
 - Приложение принимает только доверенный HTTPS. Самоподписанный сертификат NPM не подойдёт без установки CA на телефоны.
 - Если NPM работает в контейнере на том же хосте, указывайте LAN-IP хоста, а не `127.0.0.1`. Если NPM установлен на хосте напрямую, `127.0.0.1` тоже подойдёт.
 - Не пробрасывайте 8080/8585 на роутере и не публикуйте их в интернет.
+
+## Caddy уже установлен на хосте
+
+Если Caddy уже работает на Debian как системный сервис, контейнер Caddy из проекта запускать не нужно: порты 80/443 заняты. Используйте `compose.host-caddy.yml` — он переводит Caddy в профиль `caddy` и публикует Ktor/ntfy только на `127.0.0.1`.
+
+Схема:
+
+```text
+Интернет → системный Caddy :443
+              ├─ api.<домен>  → 127.0.0.1:8080
+              └─ ntfy.<домен> → 127.0.0.1:8585
+```
+
+### 1. Проверить Caddy и Docker
+
+```bash
+systemctl status caddy --no-pager
+caddy version
+docker compose version
+```
+
+Caddy из apt обычно читает `/etc/caddy/Caddyfile`. Если Caddy запущен в контейнере, команды отличаются — см. примечание в конце раздела.
+
+### 2. Подготовить `.env`
+
+```bash
+cd family-tracker/deploy
+cp .env.example .env
+chmod 600 .env
+nano .env
+```
+
+```env
+API_DOMAIN=api.example.com
+NTFY_DOMAIN=ntfy.example.com
+ACME_EMAIL=you@example.com
+NTFY_TOKEN=tk_placeholder
+```
+
+`ACME_EMAIL` здесь не используется системным Caddy, но требуется подстановкой Compose. DNS-записи `api.*` и `ntfy.*` должны указывать на этот сервер.
+
+### 3. Создать пользователя ntfy
+
+Поднимите только ntfy:
+
+```bash
+docker compose -f docker-compose.yml -f compose.host-caddy.yml up -d ntfy
+docker compose -f docker-compose.yml -f compose.host-caddy.yml logs -f ntfy
+```
+
+В другом терминале:
+
+```bash
+docker compose -f docker-compose.yml -f compose.host-caddy.yml \
+  exec ntfy ntfy user add --role=user tracker
+
+docker compose -f docker-compose.yml -f compose.host-caddy.yml \
+  exec ntfy ntfy access tracker 'family-*' read-write
+
+docker compose -f docker-compose.yml -f compose.host-caddy.yml \
+  exec ntfy ntfy token add --label=family-tracker tracker
+```
+
+Скопируйте `tk_...` в `NTFY_TOKEN` в `.env`.
+
+### 4. Добавить сайты в Caddyfile
+
+Сделайте резервную копию и откройте конфиг:
+
+```bash
+sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak.$(date +%F-%H%M)
+sudo nano /etc/caddy/Caddyfile
+```
+
+Добавьте два блока, не удаляя существующие сайты:
+
+```caddyfile
+api.example.com {
+    request_body {
+        max_size 256KB
+    }
+    reverse_proxy 127.0.0.1:8080
+}
+
+ntfy.example.com {
+    request_body {
+        max_size 256KB
+    }
+    reverse_proxy 127.0.0.1:8585
+}
+```
+
+Проверьте и перезагрузите Caddy:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+sudo journalctl -u caddy -n 50 --no-pager
+```
+
+Caddy сам выпустит сертификаты и добавит `X-Forwarded-For`. `request_body` заменяет лимит тела, который в Docker-варианте делал контейнер Caddy; в Ktor 3.0.1 своего лимита нет.
+
+### 5. Запустить Ktor и ntfy
+
+```bash
+docker compose -f docker-compose.yml -f compose.host-caddy.yml up -d --build
+docker compose -f docker-compose.yml -f compose.host-caddy.yml ps
+```
+
+Проверки:
+
+```bash
+curl https://api.example.com/health
+# ok
+
+curl https://ntfy.example.com/v1/health
+# {"healthy":true}
+```
+
+Проверка токена:
+
+```bash
+set -a; . ./.env; set +a
+
+curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
+  -d "healthcheck" "https://$NTFY_DOMAIN/family-healthcheck"
+
+curl -fsS -H "Authorization: Bearer $NTFY_TOKEN" \
+  "https://$NTFY_DOMAIN/family-healthcheck/json?poll=1"
+```
+
+После этого сразу привяжите семью из приложения.
+
+### Примечания
+
+- Контейнер `caddy` из проекта не запускается; не выполняйте `docker compose up` без override, иначе будет конфликт за 80/443.
+- Если системный Caddy включает access-логи, токен из `/live?token=...` может попасть в лог. Отключите логи для `api.*` или настройте редактирование query.
+- Если Caddy сам работает в Docker, `127.0.0.1` из его контейнера указывает на сам контейнер. Тогда публикуйте Ktor/ntfy на LAN-IP и проксируйте на него либо подключите Caddy к сети `family-tracker_default` и используйте имена `ktor:8080`/`ntfy:8585`.
 
 ## Portainer
 

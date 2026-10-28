@@ -1,0 +1,21 @@
+# Вариант для Debian, где Caddy уже установлен на хосте.
+#
+# Использование:
+#   docker compose -f docker-compose.yml -f compose.host-caddy.yml up -d --build
+#
+# Контейнер Caddy получает профиль и не запускается: 80/443 остаются
+# за системным Caddy. Ktor и ntfy публикуются только на localhost,
+# системный Caddy проксирует на 127.0.0.1:8080 и 127.0.0.1:8585.
+
+services:
+  caddy:
+    profiles:
+      - caddy
+
+  ktor:
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  ntfy:
+    ports:
+      - "127.0.0.1:8585:8585"

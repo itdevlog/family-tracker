@@ -74,7 +74,7 @@ Caddy автоматически выпускает TLS-сертификаты. 
 
 Подробно: [deploy/README.md](deploy/README.md) — DNS, ntfy-пользователи и ACL, проверка токена, бэкап, восстановление, обновление, сброс семьи.
 
-Если в сети уже есть Nginx Proxy Manager, Caddy можно не запускать — готовый override и настройка NPM описаны в разделе [«Вместо Caddy: Nginx Proxy Manager»](deploy/README.md#вместо-caddy-nginx-proxy-manager). Для Portainer есть отдельный `compose.portainer.yml` в корне репозитория и раздел [«Portainer»](deploy/README.md#portainer).
+Если в сети уже есть Nginx Proxy Manager, Caddy можно не запускать — готовый override и настройка NPM описаны в разделе [«Вместо Caddy: Nginx Proxy Manager»](deploy/README.md#вместо-caddy-nginx-proxy-manager). Если Caddy уже установлен на самом Debian-хосте, используйте `deploy/compose.host-caddy.yml` и раздел [«Caddy уже установлен на хосте»](deploy/README.md#caddy-уже-установлен-на-хосте). Для Portainer есть отдельный `compose.portainer.yml` в корне репозитория и раздел [«Portainer»](deploy/README.md#portainer).
 
 Локальные тесты сервера:
 
