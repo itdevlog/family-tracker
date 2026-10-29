@@ -129,6 +129,40 @@ docker compose ps                          # у всех сервисов State:
 
 Если Caddy не получает сертификат, смотрите `docker compose logs caddy`: чаще всего это DNS или закрытый 80/443.
 
+### Малый VPS (1 GB RAM)
+
+Первая сборка `ktor` запускает Gradle и Kotlin; на сервере с 1 GB RAM без swap это упирается в OOM. Добавьте swap:
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h
+```
+
+Перед повторной сборкой очистите кэш неудачных слоёв:
+
+```bash
+docker builder prune -af
+docker system prune -af
+```
+
+`Dockerfile` уже ограничивает Gradle: heap 768 MB, Kotlin-компилятор в том же JVM, один worker. Если памяти всё равно не хватает, соберите образ на другой машине и перенесите:
+
+```bash
+# на машине с Docker и репозиторием
+docker build -t family-tracker-server:local server
+docker save family-tracker-server:local | gzip > family-tracker-server.tar.gz
+scp family-tracker-server.tar.gz root@server:/root/
+
+# на сервере
+gunzip -c /root/family-tracker-server.tar.gz | docker load
+```
+
+Затем в compose замените `build: ../server` на `image: family-tracker-server:local`.
+
 ## Вместо Caddy: Nginx Proxy Manager
 
 Если в локальной сети уже есть NPM, он может выпускать сертификаты и проксировать запросы. Caddy в этом варианте **не запускается**: порты 80/443 остаются за NPM.
