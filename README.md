@@ -60,19 +60,30 @@ APK появится в `app/app/build/outputs/apk/`.
 
 ## Сервер
 
-Требования: Docker и Docker Compose на Debian-хосте, домен, открытые порты 80 и 443.
+Требования: Debian с Docker Engine и Compose, домен, открытые порты 80/443. Caddy отдельно устанавливать не нужно: он входит в compose (`caddy:2.10`) и работает в контейнере.
 
 ```bash
 cd deploy
 cp .env.example .env
 chmod 600 .env
-# заполните API_DOMAIN, NTFY_DOMAIN, ACME_EMAIL, NTFY_TOKEN
+# заполните API_DOMAIN, NTFY_DOMAIN, ACME_EMAIL
+# NTFY_TOKEN пока оставьте tk_placeholder
+
+# сначала только ntfy — чтобы создать пользователя и токен
+docker compose up -d ntfy
+docker compose exec ntfy ntfy user add --role=user tracker
+docker compose exec ntfy ntfy access tracker 'family-*' read-write
+docker compose exec ntfy ntfy token add --label=family-tracker tracker
+
+# впишите полученный tk_... в NTFY_TOKEN и запустите всё
 docker compose up -d --build
 ```
 
-Caddy автоматически выпускает TLS-сертификаты. Наружу открыты только 80/443; Ktor и ntfy доступны лишь внутри Docker-сети.
+Первая сборка занимает 10–20 минут. Caddy автоматически выпускает TLS-сертификаты. Наружу открыты только 80/443; Ktor и ntfy доступны лишь внутри Docker-сети.
 
-Подробно: [deploy/README.md](deploy/README.md) — DNS, ntfy-пользователи и ACL, проверка токена, бэкап, восстановление, обновление, сброс семьи.
+На VPS с 1 GB RAM перед сборкой нужен swap 2 GB — готовые команды и перенос готового образа описаны в разделе [«Малый VPS»](deploy/README.md#малый-vps-1-gb-ram).
+
+Подробно: [deploy/README.md](deploy/README.md) — DNS, ntfy-пользователи и ACL, проверка токена, бэкап, восстановление, обновление, сброс семьи, варианты с NPM/Portainer/системным Caddy.
 
 Если в сети уже есть Nginx Proxy Manager, Caddy можно не запускать — готовый override и настройка NPM описаны в разделе [«Вместо Caddy: Nginx Proxy Manager»](deploy/README.md#вместо-caddy-nginx-proxy-manager). Если Caddy уже установлен на самом Debian-хосте, используйте `deploy/compose.host-caddy.yml` и раздел [«Caddy уже установлен на хосте»](deploy/README.md#caddy-уже-установлен-на-хосте). Для Portainer есть отдельный `compose.portainer.yml` в корне репозитория и раздел [«Portainer»](deploy/README.md#portainer).
 

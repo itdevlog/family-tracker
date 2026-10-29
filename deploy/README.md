@@ -12,17 +12,102 @@
 
 Caddy можно заменить на Nginx Proxy Manager (NPM), если он уже работает в вашей сети — см. раздел [«Вместо Caddy: Nginx Proxy Manager»](#вместо-caddy-nginx-proxy-manager). Если Caddy уже установлен на хосте, используйте `compose.host-caddy.yml` и раздел [«Caddy уже установлен на хосте»](#caddy-уже-установлен-на-хосте). Для управления стеком из Portainer есть готовый `compose.portainer.yml` в корне репозитория и раздел [«Portainer»](#portainer).
 
+## Быстрый старт: Docker + Caddy в контейнере
+
+Этот вариант подходит для чистого Debian с установленным Docker. **Caddy отдельно устанавливать не нужно** — `docker compose` поднимает `caddy:2.10`, `ktor` и `ntfy` в одной сети; Caddy сам выпускает сертификаты и проксирует запросы.
+
+Порядок команд:
+
+```bash
+# 1. DNS: api.<домен> и ntfy.<домен> должны указывать на этот сервер.
+#    Откройте 80/tcp, 443/tcp и 443/udp.
+
+# 2. Код и конфигурация
+cd /opt
+git clone https://github.com/itdevlog/family-tracker.git
+cd family-tracker/deploy
+
+cp .env.example .env
+chmod 600 .env
+nano .env
+# API_DOMAIN=api.example.com
+# NTFY_DOMAIN=ntfy.example.com
+# ACME_EMAIL=you@example.com
+# NTFY_TOKEN=tk_placeholder
+
+# 3. На сервере с 1–2 GB RAM сначала добавьте swap (см. «Малый VPS» ниже),
+#    иначе первая сборка Gradle может упасть по OOM.
+
+# 4. Поднять только ntfy и создать пользователя
+docker compose up -d ntfy
+docker compose exec ntfy ntfy user add --role=user tracker
+docker compose exec ntfy ntfy access tracker 'family-*' read-write
+docker compose exec ntfy ntfy token add --label=family-tracker tracker
+
+# 5. Скопировать tk_... в NTFY_TOKEN в .env, затем запустить всё
+nano .env
+docker compose up -d --build
+
+# 6. Проверить
+docker compose ps
+docker compose logs -f caddy
+```
+
+Первая сборка `ktor` занимает 10–20 минут: Gradle скачивает зависимости и компилирует сервер. Это нормально.
+
+Проверки после запуска:
+
+```bash
+curl https://api.example.com/health        # ok
+curl https://ntfy.example.com/v1/health    # {"healthy":true}
+```
+
+Проверка `NTFY_TOKEN` публикацией и чтением — в разделе [«Проверка самого NTFY_TOKEN»](#проверка-самого-ntfy_token).
+
+Сразу после деплоя привяжите семью в приложении: пока семьи нет, `POST /pair/parent` открыт без авторизации.
+
 ## Требования
 
 - Debian 12 (или другой Linux) с Docker Engine и плагином `docker compose` (Compose ≥ 2.24.4 — нужен тег `!override` в локальном override).
+- RAM: рекомендуется 2 GB. На VPS с 1 GB сборка работает через swap 2 GB — см. раздел [«Малый VPS (1 GB RAM)»](#малый-vps-1-gb-ram).
 - Caddy **2.10+** — и контейнер, и системный: директива `request_body` появилась в Caddy 2.10. В Docker-варианте нужная версия уже закреплена в `docker-compose.yml`.
 - DNS: A/AAAA-записи `api.<домен>` и `ntfy.<домен>` указывают на сервер. Если домен за CDN-прокси, убедитесь, что ACME-валидация проходит.
 - Открыты порты `80/tcp`, `443/tcp`, `443/udp` (HTTP-01/HTTPS-01 и HTTP/3). Для Let's Encrypt нужен доступ из интернета.
 - Свободные имена `api`/`ntfy` в DNS и валидный e-mail для ACME.
 
+### Установка Docker (Debian)
+
+Если Docker уже установлен, шаг можно пропустить. Официальный репозиторий Docker:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg \
+  -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+
+sudo systemctl enable --now docker
+sudo docker run hello-world
+```
+
+Если работаете не под root, добавьте пользователя в группу `docker` и перезайдите:
+
+```bash
+sudo usermod -aG docker "$USER"
+```
+
 ## Настройка
 
-Все команды ниже — из каталога `deploy/`, кроме раздела «Установка APK»: его команды выполняются из корня репозитория.
+Если не указано иное, команды `docker compose` выполняются из каталога `deploy/`. Быстрый старт и установка Docker — на хосте; установка APK — из корня репозитория.
 
 ```bash
 cp .env.example .env
@@ -131,18 +216,30 @@ docker compose ps                          # у всех сервисов State:
 
 ### Малый VPS (1 GB RAM)
 
-Первая сборка `ktor` запускает Gradle и Kotlin; на сервере с 1 GB RAM без swap это упирается в OOM. Добавьте swap:
+Проверенный вариант для Debian с 1 GB RAM. Первая сборка `ktor` запускает Gradle и Kotlin; без swap она упирается в OOM (память около 950 MB из 1 GB, процесс может быть убит). Swap нужно добавить **до** первой сборки:
 
 ```bash
 sudo fallocate -l 2G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+grep -q '^/swapfile' /etc/fstab || \
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
 free -h
 ```
 
-Перед повторной сборкой очистите кэш неудачных слоёв:
+Если `fallocate` не сработал (например, файловая система не поддерживает):
+
+```bash
+sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
+
+Сборка с swap занимает 10–20 минут. Перед повторной попыткой после неудачной сборки очистите кэш слоёв:
 
 ```bash
 docker builder prune -af
